@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import os
 import pandas as pd
+from tqdm import tqdm
 
 
 class Events:
@@ -10,6 +11,7 @@ class Events:
     _c_threshhold: float = .0
     _delta_epsilon: float = .0
     _exposure_time: float = .0
+    _avg_frequency_events: float = .0
 
     _last_timestamp_event: int = 0
     _last_timestamp_img: int = 0
@@ -18,6 +20,7 @@ class Events:
     _img_resolution: tuple = (0, 0)
     _rgb_framerate: int = 0
     _img_folder_path: str = ""
+    _avg_frequency_imgs: float = .0
 
     _intermediate_img: np.ndarray = np.empty((720, 1280), dtype=np.uint8)
     _frame_generated = False
@@ -42,31 +45,27 @@ class Events:
             i += 1
         self._events_vector = np.delete(self._events_vector, 0, axis=0)
         self._events_vector[self._events_vector == 0] = -1
+        self._avg_frequency_events = np.average(np.diff(self._events_vector[:,0]))
 
-    def loadImgMetaData(self, path_to_file: str, img_resolution: tuple, video_framerate: int, folder_path: str) -> None:
+    def loadImgMetaData(self, path_to_file: str, img_resolution: tuple, video_framerate: int, folder_path: str,
+                        max_images=None) -> None:
         self._img_meta_data = pd.read_csv(path_to_file, header=None)
+        if max_images is not None:
+            self._img_meta_data = self._img_meta_data.iloc[:max_images, :]
         self._img_resolution = img_resolution
         self._rgb_framerate = video_framerate
         self._img_folder_path = folder_path
+        diff = self._img_meta_data.iloc[1,0] - self._img_meta_data.iloc[0,0]
+        self._avg_frequency_imgs = np.average(np.diff(self._img_meta_data.iloc[:,0]))
         self._intermediate_img = np.full(img_resolution, 128, dtype=np.uint8)
 
     def _cumulateEvents(self, start_ind: int, num_of_events: int):
         events_slice = self._events_vector[start_ind:start_ind + num_of_events]
-        event_array = np.full(self._img_resolution, 0, dtype=np.int16)
-        nan = False
+        event_array = np.full(self._img_resolution, 0, dtype=np.double)
         for event in events_slice:
-            if np.isnan(event[3]):
-                nan = True
-            if event[3] > 1 or event[3] < -1:
-                print("Event value is not right")
             event_array[event[2], event[1]] += event[3]
-            if np.isnan(event_array[event[2], event[1]]):
-                nan = True
-        nans = np.isnan(event_array)
-        no_of_nans = np.sum(nans)
-        if no_of_nans > 0:
-            event_array[nans] = np.nanmax(event_array)
-        return np.asarray(event_array,dtype=np.double)
+
+        return event_array
 
     def _getNearestImage(self, timestamp: int, temporal_thresh: int = None) -> tuple:
         times = np.asarray(self._img_meta_data.iloc[:, 0])
@@ -88,8 +87,8 @@ class Events:
         if break_count is not None:
             end = break_count
         else:
-            end = self._img_meta_data.shape[0]
-        for i in range(count, end * num_of_events, num_of_events):
+            end = self._img_meta_data.shape[0]*int(self._avg_frequency_imgs/(self._avg_frequency_events*num_of_events))
+        for i in tqdm(range(count, end * num_of_events, num_of_events)):
             timestamp, base_image = self._getNearestImage(self._events_vector[i][0])
             event_stream = self._cumulateEvents(i, num_of_events)
             new_frame_ln = np.add(base_image, np.multiply(event_stream, self._c_threshhold))
@@ -107,11 +106,9 @@ class Events:
 if __name__ == "__main__":
     events_obj = Events(0.15, 0.1, 10)
     events_obj.loadEventsFromFiles("../data/", 1)
-    events_obj.loadImgMetaData("../data/images.csv", (720, 1280), 1200, "../data/")
-    img_iterator = events_obj.generateFrames(200, 10)
-    img = next(img_iterator)
-    img_2 = next(img_iterator)
-    cv2.imshow("greyscale event", img)
-    cv2.imshow("next image", img_2)
-    cv2.imwrite("../data/cheetah_grey.png", img)
-    cv2.waitKey()
+    events_obj.loadImgMetaData("../data/images.csv", (720, 1280), 1200, "../data/", max_images=2)
+    img_iterator = events_obj.generateFrames(300,100)
+    i = 0
+    for img in img_iterator:
+        cv2.imwrite("../generated_imgs/gen_frame_" + str(i) + ".png", img)
+        i += 1
