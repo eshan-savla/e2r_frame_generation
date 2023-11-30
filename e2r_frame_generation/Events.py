@@ -52,7 +52,7 @@ class Events:
 
     def _cumulateEvents(self, start_ind: int, num_of_events: int):
         events_slice = self._events_vector[start_ind:start_ind + num_of_events]
-        event_array = np.empty(self._img_resolution, dtype=np.double)
+        event_array = np.full(self._img_resolution, 0, dtype=np.int16)
         nan = False
         for event in events_slice:
             if np.isnan(event[3]):
@@ -66,7 +66,7 @@ class Events:
         no_of_nans = np.sum(nans)
         if no_of_nans > 0:
             event_array[nans] = np.nanmax(event_array)
-        return event_array
+        return np.asarray(event_array,dtype=np.double)
 
     def _getNearestImage(self, timestamp: int, temporal_thresh: int = None) -> tuple:
         times = np.asarray(self._img_meta_data.iloc[:, 0])
