@@ -360,3 +360,5 @@ AMENT_IGNORE
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,c++,cmake,ros2,pycharm+all
+
+generated_imgs/
