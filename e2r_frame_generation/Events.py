@@ -106,9 +106,9 @@ class Events:
 if __name__ == "__main__":
     events_obj = Events(0.15, 0.1, 10)
     events_obj.loadEventsFromFiles("../data/", 1)
-    events_obj.loadImgMetaData("../data/images.csv", (720, 1280), 1200, "../data/", max_images=2)
-    img_iterator = events_obj.generateFrames(300,100)
+    events_obj.loadImgMetaData("../data/images.csv", (720, 1280), 1200, "../data/", max_images=3)
+    img_iterator = events_obj.generateFrames(300)
     i = 0
     for img in img_iterator:
-        cv2.imwrite("../generated_imgs/gen_frame_" + str(i) + ".png", img)
+        # cv2.imwrite("../generated_imgs/gen_frame_" + str(i) + ".png", img)
         i += 1

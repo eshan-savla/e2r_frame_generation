@@ -21,6 +21,7 @@ find_package(rclcpp REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
+add_subdirectory(src)
 # Include cpp "include" directory
 include_directories(include)
 
