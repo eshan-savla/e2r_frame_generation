@@ -11,10 +11,15 @@ class Colorizer
 private:
     cv::Mat reference_img;
     cv::Mat preprocessed_ref_img;
+    struct cv::Ptr<cv::ximgproc::SuperpixelSLIC> superpixels_ref;
+    cv::Mat superpixels_labels;
     cv::ximgproc::SLICType superpixel_algo;
     static cv::ximgproc::SLICType evaluateAlgo(const std::string &algorithm);
     cv::Mat blurImage(const cv::Mat &input_img);
-    cv::Mat createSuperPixels(cv::Mat input_img, uint region_size = 10, float ruler = 10.0f);
+    cv::Ptr<cv::ximgproc::SuperpixelSLIC> createSuperPixels(cv::Mat input_img, uint region_size = 10, float ruler = 10.0f);
+    void extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels, cv::Mat &output_img);
+    static std::vector<cv::Scalar> computeAverageIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
+    static std::vector<cv::Scalar> computeAverageNeighbourIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities);
     
 
 public:
