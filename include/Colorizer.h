@@ -5,6 +5,7 @@
 #include <string>
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc/slic.hpp>
+#include <opencv2/xfeatures2d.hpp>
 
 class Colorizer
 {
@@ -24,7 +25,11 @@ private:
     static void computePixelStdDev(const cv::Mat &input_img, cv::Mat &stddev_img);
     static std::vector<cv::Scalar> computeAverageStdDev(const cv::Mat &stddev_img, const cv::Mat &labels, const std::size_t num_superpixels);
     static std::vector<cv::Scalar> computeAverageNeighbourStdDev(const cv::Mat &stddev_img, const std::vector<std::set<int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgStdDev);
-    
+    static void applyFeatureKernel(const cv::Mat &input_img, const cv::Mat &kenel, cv::Mat &output_img);
+    static std::vector<cv::Scalar> computeAverageFeatureKernel(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, const cv::Mat &kernel);
+    std::vector<std::vector<cv::Scalar>> returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
+    static cv::Mat applySURF(const cv::Mat &input_img, std::vector<cv::KeyPoint> &keypoints);
+    static std::vector<cv::Scalar> returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
 
 public:
     Colorizer(/* args */);

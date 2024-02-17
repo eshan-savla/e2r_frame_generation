@@ -129,3 +129,42 @@ std::vector<cv::Scalar> Colorizer::computeAverageNeighbourStdDev(const cv::Mat &
         average_neighbour_stddevs[label] = totalStdDev / static_cast<int>(neighbours.size());
     }
 }
+
+void Colorizer::applyFeatureKernel(const cv::Mat &input_img, const cv::Mat &kenel, cv::Mat &output_img) {
+    cv::filter2D(input_img, output_img, -1, kenel);
+}
+
+std::vector<cv::Scalar> Colorizer::computeAverageFeatureKernel(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, const cv::Mat &kernel) {
+    std::vector<cv::Scalar> average_feature_kernels(num_superpixels);
+    for (int i = 0; i < num_superpixels; i++) {
+        cv::Mat mask = (labels == i);
+        cv::Mat output_img;
+        applyFeatureKernel(input_img, kernel, output_img);
+        cv::Scalar mean = cv::mean(output_img, mask);
+        average_feature_kernels[i] = mean;
+    }
+    return average_feature_kernels;
+}
+
+std::vector<std::vector<cv::Scalar>> Colorizer::returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
+    std::vector<std::vector<cv::Scalar>> gaborFeatures(40);
+    double thetas[8] = {0, M_1_PI/8, 2*M_1_PI/8, 3*M_1_PI/8, 4*M_1_PI/8, 5*M_1_PI/8, 6*M_1_PI/8, 7*M_1_PI/8};
+    int lambdas[5] = {0, 1, 2, 3, 4};
+    int count = 0;
+    for(const auto &theta : thetas) {
+        for(const auto &lambda : lambdas) {
+            cv::Mat gaborKernel = cv::getGaborKernel(cv::Size(5,5), 1, theta, 1/lambda, 1, 0, CV_32F);
+            std::vector<cv::Scalar> gaborFeatures[count++] = computeAverageFeatureKernel(input_img, labels, num_superpixels, gaborKernel);
+        }
+    }
+    return gaborFeatures;
+}
+
+cv::Mat Colorizer::applySURF(const cv::Mat &input_img, std::vector<cv::KeyPoint> &keypoints) {
+    cv::Ptr<cv::xfeatures2d::SURF> surf = cv::xfeatures2d::SURF::create();
+    surf->setHessianThreshold(400);
+    surf->setExtended(true);
+    cv::Mat descriptors;
+    surf->compute(input_img, keypoints, descriptors);
+    return descriptors;
+}
