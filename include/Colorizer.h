@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string>
 #include <opencv2/opencv.hpp>
+#include <opencv2/ximgproc/lsc.hpp>
 #include <opencv2/ximgproc/slic.hpp>
 #include <opencv2/xfeatures2d.hpp>
 
@@ -12,12 +13,12 @@ class Colorizer
 private:
     cv::Mat reference_img;
     cv::Mat preprocessed_ref_img;
-    struct cv::Ptr<cv::ximgproc::SuperpixelSLIC> superpixels_ref;
+    struct cv::Ptr<cv::ximgproc::SuperpixelLSC> superpixels_ref;
     cv::Mat superpixels_labels;
     cv::ximgproc::SLICType superpixel_algo;
     static cv::ximgproc::SLICType evaluateAlgo(const std::string &algorithm);
     cv::Mat blurImage(const cv::Mat &input_img);
-    cv::Ptr<cv::ximgproc::SuperpixelSLIC> createSuperPixels(cv::Mat input_img, uint region_size = 10, float ruler = 10.0f);
+    cv::Ptr<cv::ximgproc::SuperpixelLSC> createSuperPixels(cv::Mat input_img, uint region_size = 40, float ruler = 10.0f);
     void extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels, cv::Mat &output_img);
     static std::vector<cv::Scalar> computeAverageIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
     static std::vector<std::set<int>> findSuperPixelNeighbours(const cv::Mat &labels, const std::size_t num_superpixels);

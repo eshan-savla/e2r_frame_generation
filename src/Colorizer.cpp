@@ -39,14 +39,14 @@ cv::Mat Colorizer::blurImage(const cv::Mat & input_img) {
     return output_img;
 }
 
-cv::Ptr<cv::ximgproc::SuperpixelSLIC> Colorizer::createSuperPixels(cv::Mat input_img, uint region_size, float ruler) {
+cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(cv::Mat input_img, uint region_size, float ruler) {
     cv::Mat output_labels;
     cv::Mat blurred_img = blurImage(input_img);
         if (blurred_img.channels() > 1)
         cv::cvtColor(blurred_img, blurred_img, cv::COLOR_BGR2Lab);
-    superpixels_ref = cv::ximgproc::createSuperpixelSLIC(blurred_img, superpixel_algo, region_size, ruler);
-    superpixels_ref->iterate();
-    return superpixels_ref;
+    auto superpixels = cv::ximgproc::createSuperpixelLSC(blurred_img, region_size, ruler);
+    superpixels->iterate();
+    return superpixels;
 }
 
 void Colorizer::extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels, cv::Mat &output_img) {
