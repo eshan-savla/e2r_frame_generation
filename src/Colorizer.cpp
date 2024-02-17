@@ -63,39 +63,69 @@ std::vector<cv::Scalar> Colorizer::computeAverageIntensities(const cv::Mat &inpu
     return average_intensities;
 }
 
-std::vector<cv::Scalar> Colorizer::computeAverageNeighbourIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities) {
-    std::vector<cv::Scalar> average_neighbour_intensities(num_superpixels);
-    cv::Mat mask = (labels == labels);
-    cv::Mat dilatedMask;
-    cv::dilate(mask, dilatedMask, cv::Mat());
+void Colorizer::computePixelStdDev(const cv::Mat &input_img, cv::Mat &stddev_img){
+    cv::Mat mean, sqmean;    
+    cv::boxFilter(input_img, mean, CV_32F, cv::Size(5,5), cv::Point(-1,-1), true, cv::BORDER_REPLICATE);
+    cv::sqrBoxFilter(input_img, sqmean, CV_32F, cv::Size(5,5), cv::Point(-1,-1), true, cv::BORDER_REPLICATE);
+    cv::Mat stddevImage = cv::Mat(mean.size(), CV_32F);
+    cv::sqrt(sqmean - mean.mul(mean), stddevImage);
+}
 
-    cv::Mat neighborMask = dilatedMask & ~mask;
-    cv::Mat neighborLabels;
-    labels.copyTo(neighborLabels, neighborMask);
+std::vector<cv::Scalar> Colorizer::computeAverageStdDev(const cv::Mat &stddev_img, const cv::Mat &labels, const std::size_t num_superpixels) {
+    std::vector<cv::Scalar> average_stddevs(num_superpixels);
     for (int i = 0; i < num_superpixels; i++) {
-        cv::Mat mask = (neighborLabels == i);
+        cv::Mat mask = (labels == i);
+        cv::Scalar mean = cv::mean(stddev_img, mask);
+        average_stddevs[i] = mean;
+    }
+    return average_stddevs;
+}
+
+std::vector<std::set<int>> Colorizer::findSuperPixelNeighbours(const cv::Mat &labels, const std::size_t num_superpixels) {
+    std::vector<std::set<int>> neighbours(num_superpixels);
+
+    for (int label = 0; label < num_superpixels; ++label) {
+        cv::Mat mask = (labels == label);
         cv::Mat dilatedMask;
         cv::dilate(mask, dilatedMask, cv::Mat());
 
         cv::Mat neighborMask = dilatedMask & ~mask;
-        cv::Mat neighborLabels;
-        labels.copyTo(neighborLabels, neighborMask);
-        cv::Scalar totalIntensity = cv::Scalar::all(0);
-        int count = 0;
-        for (int i = 0; i < neighborLabels.rows; ++i)
-        {
-            for (int j = 0; j < neighborLabels.cols; ++j)
-            {
-                int neighborLabel = neighborLabels.at<int>(i, j);
-                if (neighborLabel != i && neighborLabel != 0)
-                {
-                    totalIntensity += avgIntensities[neighborLabel];
-                    ++count;
+        cv::Mat neighbourLabels;
+        labels.copyTo(neighbourLabels, neighborMask);
+
+        for (int i = 0; i < neighbourLabels.rows; ++i) {
+            for (int j = 0; j < neighbourLabels.cols; ++j) {
+                int neighbourLabel = neighbourLabels.at<int>(i, j);
+                if (neighbourLabel != label) {
+                    neighbours[label].insert(neighbourLabel);
                 }
             }
         }
-        average_neighbour_intensities[i] = totalIntensity / count;
     }
-    
 
+    return neighbours;
+}
+
+std::vector<cv::Scalar> Colorizer::computeAverageNeighbourIntensities(const cv::Mat &input_img, const std::vector<std::set<int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities) {
+    std::vector<cv::Scalar> average_neighbour_intensities(num_superpixels);
+    for (int label = 0; label < num_superpixels; label++) {
+        std::set<int> neighbours = neighbourhoods[label];
+        cv::Scalar totalIntensity = cv::Scalar::all(0);
+        for (int neighbour : neighbours) {
+            totalIntensity += avgIntensities[neighbour];
+        }
+        average_neighbour_intensities[label] = totalIntensity / static_cast<int>(neighbours.size());
+    }
+}
+
+std::vector<cv::Scalar> Colorizer::computeAverageNeighbourStdDev(const cv::Mat &stddev_img, const std::vector<std::set<int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgStdDev) {
+    std::vector<cv::Scalar> average_neighbour_stddevs(num_superpixels);
+    for (int label = 0; label < num_superpixels; label++) {
+        std::set<int> neighbours = neighbourhoods[label];
+        cv::Scalar totalStdDev = cv::Scalar::all(0);
+        for (int neighbour : neighbours) {
+            totalStdDev += avgStdDev[neighbour];
+        }
+        average_neighbour_stddevs[label] = totalStdDev / static_cast<int>(neighbours.size());
+    }
 }

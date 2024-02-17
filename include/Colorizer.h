@@ -19,7 +19,11 @@ private:
     cv::Ptr<cv::ximgproc::SuperpixelSLIC> createSuperPixels(cv::Mat input_img, uint region_size = 10, float ruler = 10.0f);
     void extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels, cv::Mat &output_img);
     static std::vector<cv::Scalar> computeAverageIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
-    static std::vector<cv::Scalar> computeAverageNeighbourIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities);
+    static std::vector<std::set<int>> findSuperPixelNeighbours(const cv::Mat &labels, const std::size_t num_superpixels);
+    static std::vector<cv::Scalar> computeAverageNeighbourIntensities(const cv::Mat &input_img, const std::vector<std::set<int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities);
+    static void computePixelStdDev(const cv::Mat &input_img, cv::Mat &stddev_img);
+    static std::vector<cv::Scalar> computeAverageStdDev(const cv::Mat &stddev_img, const cv::Mat &labels, const std::size_t num_superpixels);
+    static std::vector<cv::Scalar> computeAverageNeighbourStdDev(const cv::Mat &stddev_img, const std::vector<std::set<int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgStdDev);
     
 
 public:
