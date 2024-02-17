@@ -28,8 +28,8 @@ private:
     static void applyFeatureKernel(const cv::Mat &input_img, const cv::Mat &kenel, cv::Mat &output_img);
     static std::vector<cv::Scalar> computeAverageFeatureKernel(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, const cv::Mat &kernel);
     std::vector<std::vector<cv::Scalar>> returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
-    static cv::Mat applySURF(const cv::Mat &input_img, std::vector<cv::KeyPoint> &keypoints);
-    static std::vector<cv::Scalar> returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
+    std::vector<cv::KeyPoint> static applySURF(const cv::Mat &input_img, const cv::Mat &mask, cv::Mat &descriptors);
+    static std::vector<std::vector<cv::Scalar>> returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
 
 public:
     Colorizer(/* args */);

@@ -147,7 +147,7 @@ std::vector<cv::Scalar> Colorizer::computeAverageFeatureKernel(const cv::Mat &in
 }
 
 std::vector<std::vector<cv::Scalar>> Colorizer::returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
-    std::vector<std::vector<cv::Scalar>> gaborFeatures(40);
+    std::vector<std::vector<cv::Scalar>> gaborFeatures(40, std::vector<cv::Scalar>(num_superpixels));
     double thetas[8] = {0, M_1_PI/8, 2*M_1_PI/8, 3*M_1_PI/8, 4*M_1_PI/8, 5*M_1_PI/8, 6*M_1_PI/8, 7*M_1_PI/8};
     int lambdas[5] = {0, 1, 2, 3, 4};
     int count = 0;
@@ -160,11 +160,27 @@ std::vector<std::vector<cv::Scalar>> Colorizer::returnGaborFeatures(const cv::Ma
     return gaborFeatures;
 }
 
-cv::Mat Colorizer::applySURF(const cv::Mat &input_img, std::vector<cv::KeyPoint> &keypoints) {
+std::vector<cv::KeyPoint>  Colorizer::applySURF(const cv::Mat &input_img, const cv::Mat &mask, cv::Mat &descriptors) {
     cv::Ptr<cv::xfeatures2d::SURF> surf = cv::xfeatures2d::SURF::create();
     surf->setHessianThreshold(400);
     surf->setExtended(true);
-    cv::Mat descriptors;
-    surf->compute(input_img, keypoints, descriptors);
-    return descriptors;
+    surf->setUpright(true);
+    std::vector<cv::KeyPoint> keypoints;
+    surf->detectAndCompute(input_img, mask, keypoints, descriptors);
+    return keypoints;
+}
+
+std::vector<std::vector<cv::Scalar>> Colorizer::returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
+    cv::Mat surfFeatures(128, num_superpixels, CV_32F);
+    for (int i = 0; i < num_superpixels; i++) {
+
+        cv::Mat mask = (labels == i);
+        cv::Mat descriptors;
+        std::vector<cv::KeyPoint> keypoints = applySURF(input_img, mask, descriptors);
+        for (int j = 0; j < 128; j++) {
+            cv::Scalar mean = cv::mean(descriptors.col(j));
+            surfFeatures.at<cv::Scalar>(j, i) = mean;
+            }
+    }
+    return surfFeatures;
 }
