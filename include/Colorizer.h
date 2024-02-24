@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc/lsc.hpp>
 #include <opencv2/ximgproc/slic.hpp>
+#include <opencv4/opencv2/xfeatures2d.hpp> 
 #include <opencv2/xfeatures2d.hpp>
 namespace colorizer{
     class Colorizer
@@ -15,11 +16,12 @@ namespace colorizer{
         cv::ximgproc::SLICType superpixel_algo;
         static cv::ximgproc::SLICType evaluateAlgo(const std::string &algorithm);
         cv::Mat blurImage(const cv::Mat &input_img);
-        cv::Ptr<cv::ximgproc::SuperpixelLSC> createSuperPixels(cv::Mat input_img, uint region_size = 40, float ruler = 10.0f);
-        std::vector<std::vector<cv::Scalar>>
+        cv::Ptr<cv::ximgproc::SuperpixelLSC> createSuperPixels(const cv::Mat &input_img, uint region_size = 40, float ruler = 10.0f);
+        static std::vector<cv::Scalar>
         extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels);
-        std::vector<unsigned int> cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const std::size_t target_num_superpixels);
-        void applyColorTransfer(const cv::Mat input_img, const cv::Mat &input_superpixels, const unsigned int &num_superpixels, const std::vector<unsigned int> &target_ref_matches, cv::Mat &output_img);
+        std::vector<int> cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const int target_num_superpixels);
+        cv::Mat applyColorTransfer(const cv::Mat &input_img, const cv::Mat &input_superpixels,
+                                   const unsigned int &num_superpixels, const std::vector<int> &target_ref_matches);
 
         // static methods
         // Feature extraction
@@ -38,7 +40,7 @@ namespace colorizer{
         static std::vector<std::vector<cv::Scalar>> returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels);
 
         // Feature matching
-        static void matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<unsigned int> &ref_superpixels);
+        static void matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<int> &ref_superpixels);
 
         // Color transfer
         static cv::Point2i computeCentroids(const cv::Mat &superpixels, const unsigned int &label);

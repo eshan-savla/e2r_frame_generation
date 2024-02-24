@@ -17,45 +17,13 @@ Colorizer::Colorizer(const cv::Mat &reference_img) {
 void Colorizer::setReferenceImg(const cv::Mat &reference_img){
     this->reference_img = reference_img;
     cv::cvtColor(reference_img, preprocessed_ref_img, cv::COLOR_BGR2Lab);
-    superpixels_ref = createSuperPixels(preprocessed_ref_img);
+    superpixels_ref = createSuperPixels(preprocessed_ref_img, 20);
     superpixels_ref->getLabels(ref_superpixels_labels);
-    std::vector<std::vector<cv::Scalar>> ref_superpixels_features_vec = extractFeatures(preprocessed_ref_img, ref_superpixels_labels, superpixels_ref->getNumberOfSuperpixels());
-    // std::vector<cv::Scalar> ref_superpixels_features_vec_flat;
-    // for (int i = 0; i < ref_superpixels_features_vec.size(); i++) {
-    //     for (int j = 0; j < ref_superpixels_features_vec[i].size(); j++) {
-    //         ref_superpixels_features_vec_flat.push_back(ref_superpixels_features_vec[i][j]);
-    //     }
-    // }
-    cv::Mat features_matrix(superpixels_ref->getNumberOfSuperpixels(), 172, CV_64F);
-    // for (int i = 0; i < 172; i++) {
-    //     cv::Mat sample = cv::Mat(1, 172, CV_64F, ref_superpixels_features_vec_flat.data()).clone();
-    //     features_matrix.push_back(sample);
-    // }
-
-    assert(ref_superpixels_features_vec.size() == superpixels_ref->getNumberOfSuperpixels());
-
-    for (int i = 0; i < superpixels_ref->getNumberOfSuperpixels(); i++) {
-        if(i == 574)
-            int p =1;
-        for (int j = 0; j < 172; j++) {
-            if(j == 171)
-                int b= 0;
-            features_matrix.at<cv::Scalar>(i,j) = ref_superpixels_features_vec.at(i).at(j);
-        }
-    }
-    auto mat_val00 = features_matrix.ptr<cv::Scalar>(0,0);
-    auto mat_val01 = features_matrix.ptr<cv::Scalar>(0,1);
-    auto mat_val10 = features_matrix.ptr<cv::Scalar>(1,0);
-    auto mat_val11 = features_matrix.ptr<cv::Scalar>(1,1);
-    auto vec_val00 = ref_superpixels_features_vec[0][0];
-    auto vec_val01 = ref_superpixels_features_vec[0][1];
-    auto vec_val10 = ref_superpixels_features_vec[1][0];
-    auto vec_val11 = ref_superpixels_features_vec[1][1];
-    auto mat_val = features_matrix.ptr<cv::Scalar>(2,171);
-    auto vec_val = ref_superpixels_features_vec[2][171];
-    int a = 0;
-//    int a = 0;
-//    ref_superpixels_features = features_matrix;
+    int num_suppix = superpixels_ref->getNumberOfSuperpixels();
+    std::cout << "Computing features for reference image... \n";
+    std::vector<cv::Scalar> ref_superpixels_features_vec = extractFeatures(preprocessed_ref_img, ref_superpixels_labels, num_suppix);
+    cv::Mat features_matrix(superpixels_ref->getNumberOfSuperpixels(), 172, CV_64FC4, ref_superpixels_features_vec.data());
+    ref_superpixels_features = features_matrix;
 }
 void Colorizer::setSuperPixelAlgorithm(const std::string &superpixel_algorithm){
     superpixel_algo = evaluateAlgo(superpixel_algorithm);
@@ -81,7 +49,7 @@ cv::Mat Colorizer::blurImage(const cv::Mat & input_img) {
 }
 
 int Colorizer::colorizeGreyScale(const cv::Mat &input_img, cv::Mat &output_img) {
-    std::size_t num_superpixels;
+    int num_superpixels;
     if (superpixels_ref.empty()) {
         setReferenceImg(reference_img);
     }
@@ -94,24 +62,26 @@ int Colorizer::colorizeGreyScale(const cv::Mat &input_img, cv::Mat &output_img) 
 //    if (input_img.channels() > 1) {
 //        return -1;
 //    }
-    auto input_superpixels = createSuperPixels(input_img);
+    auto input_superpixels = createSuperPixels(input_img, 20);
     cv::Mat superpixels_labels;
     input_superpixels->getLabels(superpixels_labels);
-    num_superpixels = input_superpixels->getNumberOfSuperpixels();
-    std::vector<std::vector<cv::Scalar>> target_feature_vecs = extractFeatures(input_img, superpixels_labels, num_superpixels);
-    cv::Mat target_feature_matrix(num_superpixels, 172, CV_64F);
-    for (int i = 0; i < num_superpixels; i++) {
-        for (int j = 0; j < 172; j++) {
-            target_feature_matrix.at<cv::Scalar>(i,j) = target_feature_vecs[i][j];
-        }
-    }
+    num_superpixels = static_cast<int>(input_superpixels->getNumberOfSuperpixels());
+    std::cout << "Computing features for input image... \n";
+    std::vector<cv::Scalar> target_feature_vecs = extractFeatures(input_img, superpixels_labels, num_superpixels);
+    cv::Mat target_feature_matrix(num_superpixels, 172, CV_64FC4, target_feature_vecs.data());
     cv::Mat outputLabels;
-    auto target_ref_matches = cascadeFeatureMatching(target_feature_matrix, superpixels_labels, num_superpixels);
-    applyColorTransfer(input_img, superpixels_labels, num_superpixels, target_ref_matches, output_img);
+    std::cout << "Matching features... \n";
+    std::vector<int> target_ref_matches = cascadeFeatureMatching(target_feature_matrix, superpixels_labels, num_superpixels);
+    int input_img_channels = input_img.channels();
+    int target_feature_matrix_channels = target_feature_matrix.channels();
+    assert(input_img.channels() == target_feature_matrix.channels());
+    std::cout << "Applying color transfer... \n";
+    cv::Mat scribbled_img = applyColorTransfer(input_img, superpixels_labels, num_superpixels, target_ref_matches);
+    output_img = scribbled_img;
     return 0;
 }
 
-cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(cv::Mat input_img, uint region_size, float ruler) {
+cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(const cv::Mat &input_img, uint region_size, float ruler) {
     cv::Mat output_labels;
     cv::Mat blurred_img = blurImage(input_img);
         if (blurred_img.channels() > 1)
@@ -121,69 +91,84 @@ cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(cv::Mat input_
     return superpixels;
 }
 
-std::vector<std::vector<cv::Scalar>>
+std::vector<cv::Scalar>
 Colorizer::extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels) {
     std::vector<cv::Scalar> average_intensities = computeAverageIntensities(input_img, input_superpixels, num_superpixels);
+    std::cout << "Computed average intensities" << std::endl;
     std::vector<cv::Scalar> average_stddevs = computeAverageStdDev(input_img, input_superpixels, num_superpixels);
+    std::cout << "Computed average standard deviations" << std::endl;
     std::vector<std::set<unsigned int>> neighbourhoods = findSuperPixelNeighbours(input_superpixels, num_superpixels);
+    std::cout << "Computed superpixel neighbourhoods" << std::endl;
     std::vector<cv::Scalar> average_neighbour_intensities = computeAverageNeighbourIntensities(neighbourhoods, num_superpixels, average_intensities);
+    std::cout << "Computed average neighbour intensities" << std::endl;
     std::vector<cv::Scalar> average_neighbour_stddevs = computeAverageNeighbourStdDev(neighbourhoods, num_superpixels, average_stddevs);
+    std::cout << "Computed average neighbour standard deviations" << std::endl;
     std::vector<std::vector<cv::Scalar>> gaborFeatures = returnGaborFeatures(input_img, input_superpixels, num_superpixels);
+    std::cout << "Computed Gabor features" << std::endl;
     std::vector<std::vector<cv::Scalar>> surfFeatures = returnSURFFeatures(input_img, input_superpixels, num_superpixels);
-    std::vector<std::vector<cv::Scalar>> featureMatrix(num_superpixels, std::vector<cv::Scalar>(172));
+    std::cout << "Computed SURF features" << std::endl;
+    std::vector<cv::Scalar> featureMatrix;
     for (int i = 0; i < num_superpixels; i++) {
         for(int j = 0; j < 40; j++)
-            featureMatrix[i][j] = gaborFeatures[i][j];
+            featureMatrix.push_back(gaborFeatures[i][j]);
         for(int j = 40; j < 168; j++)
-            featureMatrix[i][j] = surfFeatures[i][j-40];
-        featureMatrix[i][168] = average_intensities[i];
-        featureMatrix[i][169] = average_stddevs[i];
-        featureMatrix[i][170] = average_neighbour_intensities[i];
-        featureMatrix[i][171] = average_neighbour_stddevs[i];
+            featureMatrix.push_back(surfFeatures[i][j-40]);
+        featureMatrix.push_back(average_intensities[i]);
+        featureMatrix.push_back(average_stddevs[i]);
+        featureMatrix.push_back(average_neighbour_intensities[i]);
+        featureMatrix.push_back(average_neighbour_stddevs[i]);
     }
+
     return featureMatrix;
 }
 
-std::vector<unsigned int> Colorizer::cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const std::size_t target_num_superpixels) {
-    float weights[4] = {0.2, 0.5, 0.2 , 0.1};
-    std::vector<unsigned int> target_ref_matches_map(target_num_superpixels, 0);
+std::vector<int>
+Colorizer::cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const int target_num_superpixels) {
+    double weights[4] = {0.2, 0.5, 0.2 , 0.1};
+    std::vector<int> target_ref_matches_map(target_num_superpixels, 0);
     for (int i = 0; i < target_num_superpixels; i++) {
         cv::Mat target_feature = target_features.row(i);
         int indexes[6] = {0, 40, 168, 169, 170, 171};
-        std::vector<unsigned int> ref_superpixels_indexes(superpixels_ref->getNumberOfSuperpixels());
+        std::vector<int> ref_superpixels_indexes(superpixels_ref->getNumberOfSuperpixels());
         std::iota(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), 0);
         for (int j = 1; j < 6; j++) {
             matchFeatures(target_feature.colRange(indexes[j-1], indexes[j]), ref_superpixels_features.colRange(indexes[j-1], indexes[j]), ref_superpixels_indexes);
-            ref_superpixels_indexes = std::vector<unsigned int>(ref_superpixels_indexes.begin(), ref_superpixels_indexes.begin() + ref_superpixels_indexes.size()/2);
+            ref_superpixels_indexes = std::vector<int>(ref_superpixels_indexes.begin(), ref_superpixels_indexes.begin() + float(ref_superpixels_indexes.size())/2);
         }
-        int best_match_index = *std::min_element(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), [&](unsigned int a, unsigned int b) {
+        int best_match_index = *std::min_element(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), [&](int a, int b) {
             float costA, costB;
             costA = weights[0] * cv::norm(target_feature.colRange(0, 40) - ref_superpixels_features.colRange(0, 40).row(a)) + weights[1] * cv::norm(target_feature.colRange(40, 168) - ref_superpixels_features.colRange(40, 168).row(a)) + weights[2] * cv::norm(target_feature.colRange(168, 170) - ref_superpixels_features.colRange(168, 170).row(a)) + weights[3] * cv::norm(target_feature.colRange(170, 172) - ref_superpixels_features.colRange(170, 172).row(a));
             costB = weights[0] * cv::norm(target_feature.colRange(0, 40) - ref_superpixels_features.colRange(0, 40).row(b)) + weights[1] * cv::norm(target_feature.colRange(40, 168) - ref_superpixels_features.colRange(40, 168).row(b)) + weights[2] * cv::norm(target_feature.colRange(168, 170) - ref_superpixels_features.colRange(168, 170).row(b)) + weights[3] * cv::norm(target_feature.colRange(170, 172) - ref_superpixels_features.colRange(170, 172).row(b));
             return costA < costB;
         });
-        target_ref_matches_map[i] = ref_superpixels_indexes[best_match_index];
+        target_ref_matches_map[i] = best_match_index;
     }
     return target_ref_matches_map;
 }
 
-void Colorizer::applyColorTransfer(const cv::Mat input_img, const cv::Mat &input_superpixels, const unsigned int &num_superpixels, const std::vector<unsigned int> &target_ref_matches, cv::Mat &output_img) {
-    output_img = cv::Mat::zeros(input_img.size(), input_img.type());
+cv::Mat Colorizer::applyColorTransfer(const cv::Mat &input_img, const cv::Mat &input_superpixels,
+                                      const unsigned int &num_superpixels, const std::vector<int> &target_ref_matches) {
+    cv::Mat output_img = cv::Mat::zeros(input_img.size(), input_img.type());
     cv::Mat ref_cie_img;
     cv::cvtColor(reference_img, ref_cie_img, cv::COLOR_BGR2Lab);
     cv::Mat input_img_cie;
-    cv::cvtColor(input_img, input_img_cie, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(input_img, input_img_cie, cv::COLOR_BGRA2BGR);
     cv::cvtColor(input_img_cie, input_img_cie, cv::COLOR_BGR2Lab);
     for (int i = 0; i < num_superpixels; i++) {
         cv::Rect target_superpixel_rect = cv::boundingRect(input_superpixels == i);
         cv::Rect ref_superpixel_rect = cv::boundingRect(ref_superpixels_labels == target_ref_matches[i]);
         cv::Point target_superpixel_centroid = computeCentroids(input_superpixels, i);
         cv::Point ref_superpixel_centroid = computeCentroids(ref_superpixels_labels, target_ref_matches[i]);
+        cv::Scalar input_img_centre = input_img_cie.at<cv::Scalar>(target_superpixel_centroid);
+        cv::Scalar ref_img_centre = ref_cie_img.at<cv::Scalar>(ref_superpixel_centroid);
+        cv::Vec3b input_img_centre_vec = input_img_cie.at<cv::Vec3b>(target_superpixel_centroid);
+        cv::Vec3b ref_img_centre_vec = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid);
         input_img_cie.at<cv::Vec3b>(target_superpixel_centroid)[1] = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid)[1];
         input_img_cie.at<cv::Vec3b>(target_superpixel_centroid)[2] = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid)[2];   
     }
     
     cv::cvtColor(input_img_cie, output_img, cv::COLOR_Lab2BGR);
+    return output_img;
 }
 
 cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const unsigned int &label) {
@@ -193,7 +178,7 @@ cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const unsign
     return cv::Point2i(static_cast<int>(M.m10/M.m00),static_cast<int>(M.m01/M.m00));
 }
 
-void Colorizer::matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<unsigned int> &ref_superpixels) {
+void Colorizer::matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<int> &ref_superpixels) {
     std::sort(ref_superpixels.begin(), ref_superpixels.end(), [&](unsigned int a, unsigned int b) {
         return cv::norm(target_features - ref_features.row(a)) < cv::norm(target_features - ref_features.row(b));
     });    
