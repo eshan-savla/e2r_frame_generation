@@ -11,7 +11,7 @@ namespace colorizer{
     class Colorizer
     {
     private:
-        cv::Mat reference_img, preprocessed_ref_img, ref_superpixels_labels, ref_superpixels_features;
+        cv::Mat reference_img, ref_img_lab, preprocessed_ref_img, ref_superpixels_labels, ref_superpixels_features;
         struct cv::Ptr<cv::ximgproc::SuperpixelLSC> superpixels_ref;
         cv::ximgproc::SLICType superpixel_algo;
         static cv::ximgproc::SLICType evaluateAlgo(const std::string &algorithm);
@@ -22,6 +22,7 @@ namespace colorizer{
         std::vector<int> cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const int target_num_superpixels);
         cv::Mat applyColorTransfer(const cv::Mat &input_img, const cv::Mat &input_superpixels,
                                    const unsigned int &num_superpixels, const std::vector<int> &target_ref_matches);
+        cv::Vec3d computeAverageColor(const cv::Mat &superpixel, int label);
 
         // static methods
         // Feature extraction
@@ -43,7 +44,9 @@ namespace colorizer{
         static void matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<int> &ref_superpixels);
 
         // Color transfer
-        static cv::Point2i computeCentroids(const cv::Mat &superpixels, const unsigned int &label);
+        static void transferColors(const cv::Mat &bw_image, const cv::Mat &scribbled_image, cv::Mat &output_img);
+        
+        static cv::Point2i computeCentroids(const cv::Mat &superpixels, const int &label);
         static cv::Mat sumAbsDiff(const cv::Mat &img1, const cv::Mat &img2);
         static cv::Mat getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_img);
         static cv::Mat getVolColor(const cv::Mat &color_img, const cv::Mat &yuv_img, float winSize = 0.0f, int deg = 0.0f, float idy_pr = 0.0f, float idx_pr = 0.0f, int in_itr_num = 5, int out_itr_num = 1);

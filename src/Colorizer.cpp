@@ -17,7 +17,7 @@ Colorizer::Colorizer(const cv::Mat &reference_img) {
 void Colorizer::setReferenceImg(const cv::Mat &reference_img){
     this->reference_img = reference_img;
     cv::cvtColor(reference_img, preprocessed_ref_img, cv::COLOR_BGR2Lab);
-    superpixels_ref = createSuperPixels(preprocessed_ref_img, 20);
+    superpixels_ref = createSuperPixels(preprocessed_ref_img, 40);
     superpixels_ref->getLabels(ref_superpixels_labels);
     int num_suppix = superpixels_ref->getNumberOfSuperpixels();
     std::cout << "Computing features for reference image... \n";
@@ -62,7 +62,7 @@ int Colorizer::colorizeGreyScale(const cv::Mat &input_img, cv::Mat &output_img) 
 //    if (input_img.channels() > 1) {
 //        return -1;
 //    }
-    auto input_superpixels = createSuperPixels(input_img, 20);
+    auto input_superpixels = createSuperPixels(input_img, 40);
     cv::Mat superpixels_labels;
     input_superpixels->getLabels(superpixels_labels);
     num_superpixels = static_cast<int>(input_superpixels->getNumberOfSuperpixels());
@@ -75,8 +75,10 @@ int Colorizer::colorizeGreyScale(const cv::Mat &input_img, cv::Mat &output_img) 
     int input_img_channels = input_img.channels();
     int target_feature_matrix_channels = target_feature_matrix.channels();
     assert(input_img.channels() == target_feature_matrix.channels());
+    int ref_num_superpixels = superpixels_ref->getNumberOfSuperpixels();
     std::cout << "Applying color transfer... \n";
     cv::Mat scribbled_img = applyColorTransfer(input_img, superpixels_labels, num_superpixels, target_ref_matches);
+
     output_img = scribbled_img;
     return 0;
 }
@@ -149,33 +151,39 @@ Colorizer::cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat 
 cv::Mat Colorizer::applyColorTransfer(const cv::Mat &input_img, const cv::Mat &input_superpixels,
                                       const unsigned int &num_superpixels, const std::vector<int> &target_ref_matches) {
     cv::Mat output_img = cv::Mat::zeros(input_img.size(), input_img.type());
-    cv::Mat ref_cie_img;
-    cv::cvtColor(reference_img, ref_cie_img, cv::COLOR_BGR2Lab);
+    cv::cvtColor(reference_img, ref_img_lab, cv::COLOR_BGR2Lab);
+    cv::Mat input_img_cpy;
+    cv::cvtColor(input_img, input_img_cpy, cv::COLOR_BGRA2BGR);
     cv::Mat input_img_cie;
     cv::cvtColor(input_img, input_img_cie, cv::COLOR_BGRA2BGR);
     cv::cvtColor(input_img_cie, input_img_cie, cv::COLOR_BGR2Lab);
+    int pos[] = {-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6};
     for (int i = 0; i < num_superpixels; i++) {
-        cv::Rect target_superpixel_rect = cv::boundingRect(input_superpixels == i);
-        cv::Rect ref_superpixel_rect = cv::boundingRect(ref_superpixels_labels == target_ref_matches[i]);
+        cv::Vec3d average_color = computeAverageColor(input_superpixels, i);
         cv::Point target_superpixel_centroid = computeCentroids(input_superpixels, i);
-        cv::Point ref_superpixel_centroid = computeCentroids(ref_superpixels_labels, target_ref_matches[i]);
-        cv::Scalar input_img_centre = input_img_cie.at<cv::Scalar>(target_superpixel_centroid);
-        cv::Scalar ref_img_centre = ref_cie_img.at<cv::Scalar>(ref_superpixel_centroid);
-        cv::Vec3b input_img_centre_vec = input_img_cie.at<cv::Vec3b>(target_superpixel_centroid);
-        cv::Vec3b ref_img_centre_vec = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid);
-        input_img_cie.at<cv::Vec3b>(target_superpixel_centroid)[1] = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid)[1];
-        input_img_cie.at<cv::Vec3b>(target_superpixel_centroid)[2] = ref_cie_img.at<cv::Vec3b>(ref_superpixel_centroid)[2];   
+        for(const auto po:pos){
+            for(const auto po2:pos){
+                int x = target_superpixel_centroid.x + po;
+                int y = target_superpixel_centroid.y + po2;
+                if(x < 0 || x >= input_img.cols || y < 0 || y >= input_img.rows)
+                    continue;
+                input_img_cie.at<cv::Vec3b>(y, x)[1] = average_color[1];
+                input_img_cie.at<cv::Vec3b>(y, x)[2] = average_color[2];
+            }
+        }
     }
-    
+    // transferColors(input_img_cpy, input_img_cie, output_img);
     cv::cvtColor(input_img_cie, output_img, cv::COLOR_Lab2BGR);
     return output_img;
 }
 
-cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const unsigned int &label) {
-    cv::Mat mask = (superpixels == label);
-    cv::Mat centroids;
+cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const int &label) {
+    cv::Mat mask;
+    mask = (superpixels == label);
+    if(cv::countNonZero(mask) == 0)
+        return cv::Point2i(0,0);
     cv::Moments M = cv::moments(mask, true);
-    return cv::Point2i(static_cast<int>(M.m10/M.m00),static_cast<int>(M.m01/M.m00));
+    return {static_cast<int>(M.m10/M.m00),static_cast<int>(M.m01/M.m00)};
 }
 
 void Colorizer::matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<int> &ref_superpixels) {
@@ -325,12 +333,53 @@ std::vector<std::vector<cv::Scalar>> Colorizer::returnSURFFeatures(const cv::Mat
     return surfFeatures;
 }
 
+void Colorizer::transferColors(const cv::Mat &bw_image, const cv::Mat &scribbled_image, cv::Mat &output_img) {
+
+    cv::Mat original = bw_image.clone();
+    cv::Mat marked = scribbled_image.clone();
+    original.convertTo(original, CV_32FC3, 1.0/255.0);
+    marked.convertTo(marked, CV_32FC3, 1.0/255.0);
+    int bw_channels = original.channels();
+    int scr_channels = marked.channels();
+    auto bw_type = original.type();
+    auto scr_type = marked.type();
+    cv::Mat colorIm_ = sumAbsDiff(original, marked);
+    cv::Mat colorIm(colorIm_.rows, colorIm_.cols, CV_8U);
+    for(int i = 0; i < colorIm.rows; i++) {
+        for(int j = 0; j < colorIm.cols; j++) {
+            colorIm.at<uchar>(i,j) = colorIm_.at<double>(i,j) > 0.01 ? 1 : 0;
+            if(colorIm_.at<double>(i,j) > 0.01) {
+                double val_ = colorIm_.at<double>(i,j);
+                uchar val = colorIm.at<uchar>(i,j);
+                int a = 0;
+            }
+        }
+    }
+    cv::Mat ntscIm = marked.clone();
+    cv::mixChannels(&original, 1, &ntscIm, 1, new int[2]{0, 0}, 1);
+
+    int max_d = floor(log(std::min(ntscIm.rows, ntscIm.cols))/log(2)-2);
+    int iu = floor(ntscIm.rows / pow(2, max_d - 1)) * pow(2, max_d - 1);
+    int ju = floor(ntscIm.cols / pow(2, max_d - 1)) * pow(2, max_d - 1);
+    colorIm = colorIm(cv::Range(0, iu), cv::Range(0, ju));
+    ntscIm = ntscIm(cv::Range(0, iu), cv::Range(0, ju));
+    auto ntsc_type = ntscIm.type();
+    output_img = getColorExact(colorIm, ntscIm);
+}
+
+cv::Vec3d Colorizer::computeAverageColor(const cv::Mat &superpixel, int label) {
+    cv::Mat mask = (superpixel == label);
+    cv::Scalar mean = cv::mean(ref_img_lab, mask);
+    return cv::Vec3b(mean[0], mean[1], mean[2]);
+}
+
 cv::Mat Colorizer::sumAbsDiff(const cv::Mat &img1, const cv::Mat &img2) {
-    cv::Mat diff;
+    cv::Mat diff(img1.size(), img1.type());
     cv::absdiff(img1, img2, diff);
-    std::vector<cv::Mat> channels(3);
+    std::vector<cv::Mat> channels;
     cv::split(diff, channels);
     cv::Mat sumAbsDiff = channels[0] + channels[1] + channels[2];
+    int ty = sumAbsDiff.type();
     return sumAbsDiff;
 }
 
@@ -351,6 +400,8 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
     }
     cv::Mat nonZeroLocations; 
     cv::findNonZero(color_img, nonZeroLocations);
+    int c_total = color_img.total();
+    int non_z = nonZeroLocations.total();
     std::vector<int> lblInds;
     for (int i = 0; i < nonZeroLocations.total(); i++) {
         lblInds.push_back(nonZeroLocations.at<cv::Point>(i).y * color_img.cols + nonZeroLocations.at<cv::Point>(i).x);
@@ -371,25 +422,26 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
     for (int j = 0; j < m; j++) {
         for (int i = 0; i < n; i++) {
             consts_len = consts_len + 1;
-            if(!color_img.at<cv::Scalar>(i,j)[0] && !color_img.at<cv::Scalar>(i,j)[1] && !color_img.at<cv::Scalar>(i,j)[2]) {
+            if(!color_img.at<uchar>(i,j)) {
                 int tlen = 0;
                 // Eigen::VectorXd window_vals = Eigen::VectorXd::Zero(nr_of_px_in_wd);
-                for (int ii = -wd; ii <= wd; ii++) {
-                    for (int jj = -wd; jj <= wd; jj++) {
+                for (int ii = std::max(0, i -wd); ii <= std::min(i + wd, n - 1); ii++) {
+                    for (int jj = std::max(0, j - wd); jj <= std::min(j + wd, m - 1); jj++) {
                         if (ii != i && jj != j) {
                             len++; tlen++;
                             row_inds[len - 1] = consts_len;
-                            col_inds[len - 1] = indices_matrix(i+ii,j+jj);
-                            gvals(tlen - 1) = yuv_img.at<cv::Scalar>(i+ii,j+jj)[0];
+                            col_inds[len - 1] = indices_matrix(ii,jj);
+                            gvals(tlen - 1) = yuv_img.at<cv::Scalar>(ii,jj)[0];
                             // window_vals(window_index) = yuv_img.at<cv::Scalar>(i+ii,j+jj)[0];
                             // length++;
                             // window_index++;
                         }
                     }
                 }
-                double t_val = yuv_img.at<cv::Scalar>(i,j)[0];
+                auto t_vals = yuv_img.at<cv::Vec3f >(i,j);
+                float t_val = yuv_img.at<cv::Vec3f>(i,j)[0];
                 // window_vals(window_index) = center;
-                gvals(tlen) = t_val;
+                gvals(tlen) = static_cast<double>(t_val);
                 double mean = gvals.head(tlen+1).mean();
                 double c_var = (gvals.head(tlen+1).array() - mean).square().mean();
                 double csig = c_var * 0.6;
@@ -400,7 +452,7 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
                     csig = 0.000002;
                 
                 gvals.head(tlen) = (-((gvals.head(tlen).array() - t_val).square()) / csig).exp();
-                gvals.head(tlen) /= gvals.head(tlen).sum();
+                gvals.head(tlen) = gvals.head(tlen)/gvals.head(tlen).sum();
                 for (int k = len - tlen; k < len; k++) {
                     vals[k] = -gvals(k - len + tlen);
                 }
@@ -412,27 +464,33 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
         }
     }
 
-    vals.resize(len);
-    row_inds.resize(len);
-    col_inds.resize(len);
-
-    Eigen::SparseMatrix<double> A(consts_len, img_size);
+    vals.resize(len + 1);
+    row_inds.resize(len + 1);
+    col_inds.resize(len + 1);
     std::vector<Eigen::Triplet<double>> triplets;
     for (int i = 0; i < len; i++) {
-        A.insert(row_inds[i], col_inds[i]) = vals[i];
+        if(i == int(len/2))
+            int b = 0;
+        triplets.push_back(Eigen::Triplet<double>(row_inds[i], col_inds[i], vals[i]));
     }
+//    Eigen::SparseMatrix<double> A(consts_len, img_size);
+    Eigen::SparseMatrix<double> A(triplets.size(), triplets.size());
+
+    A.setFromTriplets(triplets.begin(), triplets.end());
     Eigen::VectorXd b = Eigen::VectorXd::Zero(A.rows());
     std::vector<cv::Mat> yuv_channels;
     cv::split(yuv_img, yuv_channels);
 
     for (int t = 1; t < 3; t++){
         cv::Mat curIm = yuv_channels[t];
-        for (int i = 0; i < lblInds.size(); i++)
-            b(lblInds[i]) = curIm.at<double>(lblInds[i]);
+        for (const int &lblInd : lblInds)
+            b(lblInd) = curIm.at<double>(lblInd);
         Eigen::VectorXd new_vals = Eigen::BiCGSTAB<Eigen::SparseMatrix<double>>(A).solve(b);
-        cv::Mat new_vals_mat(n, m, CV_64F, new_vals.data());
+        cv::Mat new_vals_mat(n, m, CV_64FC3, new_vals.data());
         cv::merge(std::vector<cv::Mat>{nI, new_vals_mat}, nI);
     }
+    nI.convertTo(nI, CV_32FC3, 255);
+    nI.convertTo(nI, CV_8UC3);
     cv::cvtColor(nI, nI, cv::COLOR_Lab2BGR);
     return nI;
 }
