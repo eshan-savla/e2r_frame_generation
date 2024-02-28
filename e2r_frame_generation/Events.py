@@ -85,24 +85,32 @@ class Events:
             else:
                 events_slice = self._events_vector[start_ind:end_ind]
         event_array = np.full(self._img_resolution, 0, dtype=np.double)
-        event_array[events_slice[:, 2].astype(int), events_slice[:, 1].astype(int)] += events_slice[:, 3]
-
+        for event in events_slice:
+            event_array[event[2], event[1]] += event[3]
         return event_array
 
     def deblurImage(self, blurred_img: np.ndarray, timestamp: int) -> np.ndarray:
-        average_intensities = np.multiply(self._computeAverageEvents(timestamp), self._c_threshhold)
+        average_intensities = self._computeAverageIntensities(timestamp)
         blurred_img = np.log(np.add(np.divide(blurred_img, 255), self._delta_epsilon))
         sharp_img = np.subtract(blurred_img, average_intensities)
         sharp_img = np.multiply(np.subtract(np.exp(sharp_img), self._delta_epsilon), 255)
         return sharp_img.astype(np.uint8)
         
 
-    def _computeAverageEvents(self, timestamp: int) -> np.ndarray:
+    def _computeAverageIntensities(self, timestamp: int) -> np.ndarray:
         average_intensities = np.zeros((self._img_resolution[0], self._img_resolution[1]), dtype=np.double)
-        for i in range(int(timestamp - self._exposure_time/2), int(timestamp + self._exposure_time/2)):
-            events_slice = self._getEventsInTimeFrame(timestamp, i)
-            average_intensities = np.add(average_intensities, events_slice)
+        events_slice_0 = self._getEventsInTimeFrame(timestamp, int(timestamp + self._exposure_time/2))
+        events_slice_1 = self._getEventsInTimeFrame(timestamp, int(timestamp - self._exposure_time/2))
+        intensities_0 = np.exp(np.multiply(events_slice_0, self._c_threshhold))
+        intensities_1 = np.exp(np.multiply(events_slice_1, self._c_threshhold))
+        average_intensities = np.subtract(intensities_0, intensities_1)
+        max = np.max(average_intensities)
+        min = np.min(average_intensities)
         average_intensities = np.divide(average_intensities, self._exposure_time)
+        # for i in range(int(timestamp - self._exposure_time/2), int(timestamp + self._exposure_time/2)):
+        #     events_slice = self._getEventsInTimeFrame(timestamp, i)
+        #     average_intensities = np.add(average_intensities, events_slice)
+        # average_intensities = np.divide(average_intensities, self._exposure_time)
         return average_intensities
     
     def _getEventsInTimeFrame(self, start_time: int, end_time: int) -> np.ndarray:
@@ -150,7 +158,7 @@ class Events:
 
 
 if __name__ == "__main__":
-    events_obj = Events(0.15, 0.1, 100)
+    events_obj = Events(0.15, 0.1, 833333)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     events_obj.loadEventsFromFiles("../data/", 1)
     events_obj.loadImgMetaData("../data/images.csv", (720, 1280), 1200, "../data/", max_images=3)
