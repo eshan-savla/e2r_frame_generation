@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from scipy.signal import convolve2d
 import h5py
+import nexusformat.nexus as nx
 
 class Events:
     # attributes
@@ -28,7 +29,7 @@ class Events:
     # _img_idx = 0
 
     def __init__(self, c_threshhold: float, exposure_time: float = None, delta_eps: float = 0) -> None:
-        self._events_vector = np.empty((1, 4), dtype=np.uint32)
+        self._events_vector = np.empty((0, 4), dtype=np.uint32)
         self._c_threshhold = c_threshhold
         self._delta_epsilon = delta_eps
         self._exposure_time = exposure_time
@@ -50,7 +51,10 @@ class Events:
         self._img_idx = 0
         self._deblurred_img = np.empty((720, 1280), dtype=np.uint8)
         self._timestamp_col = None
-        self._img_data = None
+        self._img_data = []
+        self._gt_img_data = []
+
+        self._prev_start_idx = 0
 
     def getImage(self, img_idx: any) -> np.ndarray:
         if isinstance(img_idx, int):
@@ -60,25 +64,31 @@ class Events:
         else:
             raise ValueError("Invalid image index")
 
-    def loadEventsFromFiles(self, path_to_folder: str, file_count: int = None, timestamp_col: int = 0) -> None:
-        i = 0
-        for filename in sorted(os.listdir(path_to_folder)):
-            file = os.path.join(path_to_folder, filename)
-            dtype = filename.split(".")[-1]
-            if (not os.path.isfile(file)): # or (filename[-3:] != "npy") or (filename[:5] != "event")
-                continue
-            if (not file_count is None) and (i > file_count):
-                break
-            if dtype == "npy":
-                events = np.load(file, allow_pickle=True)
-            elif dtype == "hdf5":
-                data = h5py.File(file, 'r')
-                events = np.asarray(data['davis']['left']['events'])
-            else:
-                continue
+    def loadEventsFromFile(self, path_to_file: str, timestamp_col: int = 0, append: bool = False) -> None:
+        file = path_to_file
+        dtype = file.split(".")[-1]
+        if (not os.path.isfile(file)): # or (filename[-3:] != "npy") or (filename[:5] != "event")
+            raise ValueError("Invalid file path")
+        if dtype == "npy":
+            events = np.load(file, allow_pickle=True)
+        elif dtype == "hdf5" or dtype == "h5":
+            data = h5py.File(file, 'r')
+            ts = np.asarray(data['events']['ts'])
+            xs = np.asarray(data['events']['xs'])
+            ys = np.asarray(data['events']['ys'])
+            ps = np.asarray(data['events']['ps'])
+            # if len(np.unique(ts)) != len(ts):
+            #     print(f"Duplicate timestamps in {filename}")
+            #     duplicate_indices = np.where(np.diff(ts) == 0)[0]
+            #     for idx in duplicate_indices:
+            #         ts[idx+1:] += 1
+            events = np.column_stack((ts, xs, ys, ps))
+        else:
+            raise ValueError("Invalid file format")
+        if append:
             self._events_vector = np.concatenate((self._events_vector, events), axis=0)
-            i += 1
-        self._events_vector = np.delete(self._events_vector, 0, axis=0)
+        else:
+            self._events_vector = events
         self._events_vector[self._events_vector == 0] = -1
         if timestamp_col != 0:
             self._events_vector[:, [0, timestamp_col]] = self._events_vector[:, [timestamp_col, 0]]
@@ -99,28 +109,43 @@ class Events:
                 self._rgb_framerate = int(1 / np.mean(np.diff(self._img_meta_data.iloc[:,0])))
             if img_resolution is None:
                 raise ValueError("Image resolution must be provided. Cannot be inferred.")
-        elif path_to_file.split(".")[-1] == "hdf5":
+        elif path_to_file.split(".")[-1] == "hdf5" or path_to_file.split(".")[-1] == "h5":
             self._imgs_in_data = True
-            data = h5py.File(path_to_file, 'r')
-            timestamps = np.asarray(data['davis']['left']['image_raw_ts'])
+            data = nx.nxload(path_to_file)
+            print(data.tree)
+            self._img_resolution = data.attrs['sensor_resolution']
+            images = data['images']
+            sharp_images = data['sharp_images']
+            timestamps = []
+            self._exposure_time = 0.0
+            for image in images:
+                # im = cv2.cvtColor(np.asarray(images[image]), cv2.COLOR_BGR2GRAY)
+                # sharp_im = cv2.cvtColor(np.asarray(sharp_images[image]), cv2.COLOR_BGR2GRAY)
+                # cv2.imshow("image", im)
+                # cv2.imshow("sharp image", sharp_im)
+                # cv2.waitKey(0)
+                timestamps.append(images[image].attrs['timestamp'])
+                self._exposure_time += images[image].attrs['exposure_time']
+                self._img_data.append(cv2.cvtColor(np.asarray(images[image]), cv2.COLOR_BGR2GRAY))
+                self._gt_img_data.append(cv2.cvtColor(np.asarray(sharp_images[image]), cv2.COLOR_BGR2GRAY))
+            self._exposure_time /= len(images)
             if max_images is None:
-                max_images = len(timestamps)
-            self._img_data = np.asarray(data['davis']['left']['image_raw'])[:max_images]
+                max_images = len(self._img_data)
+            timestamps = np.asarray(timestamps)[:max_images]
+            self._img_data = self._img_data[:max_images]
             self._img_meta_data = pd.DataFrame({'timestamp': timestamps, 'img_position': np.arange(len(timestamps))})
-            self._img_resolution = (self._img_data[0].shape[0], self._img_data[0].shape[1])
-            self._rgb_framerate = int(1 / np.mean(np.diff(timestamps)))
-            a = 0
+            self._avg_frequency_imgs = 1/(self._exposure_time * 1e-6)
         else:
             raise ValueError("Invalid file format")
+        
+        self._img_data = np.asarray(self._img_data)
         if max_images is not None:
             self._img_meta_data = self._img_meta_data.iloc[:max_images, :]
         if self._img_resolution is None:
             self._img_resolution = img_resolution
-        if self._rgb_framerate is None:
-            self._rgb_framerate = video_framerate
+        if self._avg_frequency_imgs is None:
+            self._avg_frequency_imgs = video_framerate
         self._img_folder_path = folder_path
-        self._exposure_time = np.mean(np.diff(self._img_meta_data.iloc[:,0]))
-        self._avg_frequency_imgs = 1/self._exposure_time
         self._intermediate_img = np.full(img_resolution, 128, dtype=np.uint8)
 
 
@@ -143,7 +168,7 @@ class Events:
             events_slice = self._events_vector[start_ind:start_ind + num_of_events]
 
         event_array = np.zeros(self._img_resolution, dtype=np.double)
-        indices = (events_slice[:, 1].astype(np.int32), events_slice[:, 2].astype(np.int32))
+        indices = (events_slice[:, 2].astype(np.int32), events_slice[:, 1].astype(np.int32))
         np.add.at(event_array, indices, events_slice[:, 3])
 
         if end_ind is not None and end_ind <= start_ind:
@@ -163,7 +188,7 @@ class Events:
         integrand_0 = np.divide(np.exp(np.multiply(events_slice_0, self._c_threshhold)),self._c_threshhold)
         integrand_1 = np.divide(np.exp(np.multiply(events_slice_1, self._c_threshhold)),self._c_threshhold)
 
-        average_intensities = np.divide(np.add(integrand_0, integrand_1), 2*self._mean_events_diff*10e6)
+        average_intensities = np.divide(np.add(integrand_0, integrand_1), 2*self._mean_events_diff)
 
         return average_intensities
     
@@ -193,7 +218,7 @@ class Events:
             return 0, np.zeros(1)
         if self._frame_generated and (min_diff_idx <= self._img_idx):
             return timestamp - self._last_timestamp_event, self.convertFrameToIntensities(self._intermediate_img)
-        if self._img_data is None:
+        if self._img_data.size == 0:
             intensity_img = cv2.imread(os.path.join(self._img_folder_path, self._img_meta_data.iloc[min_diff_idx, 1]))
         else:
             intensity_img = self._img_data[self._img_meta_data.iloc[min_diff_idx, 1]]
@@ -206,8 +231,12 @@ class Events:
 
     def _getEventsFromTime(self, start_time: int, num_events:int) -> tuple:
         start_idx = np.searchsorted(self._events_vector[:, 0], start_time, side='left')
+        while start_idx <= self._prev_start_idx:
+            start_idx += num_events
         end_idx = start_idx + num_events if start_idx + num_events < self._events_vector.shape[0] else self._events_vector.shape[0] - 1
-        return self._cumulateEvents(start_idx, end_idx), self._events_vector[end_idx][0]
+        events = self._cumulateEvents(start_idx, end_idx), self._events_vector[end_idx][0]
+        self._prev_start_idx = start_idx
+        return events
 
     def generateFrames(self, num_of_events: int, break_count: int = None) -> np.ndarray:
         count = 0
@@ -243,9 +272,11 @@ class Events:
                 timestamp = self._img_meta_data.iloc[i, 0]
                 next_timestamp = self._img_meta_data.iloc[i+1, 0] if i+1 < end else timestamp + 1
                 _, base_image = self._getNearestImage(timestamp)
+                frames.append(self.convertIntensitiesToFrame(base_image).astype(np.uint8))
                 while(timestamp < next_timestamp):
+                    if timestamp == 21964189.0:
+                        a = 0
                     event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
-                    event_stream = np.multiply(event_stream, self._c_threshhold)
                     base_image = np.add(base_image, np.multiply(event_stream, self._c_threshhold))
                     new_frame = self.convertIntensitiesToFrame(base_image).astype(np.uint8)
                     timestamp = end_timestamp
@@ -254,23 +285,25 @@ class Events:
                 pbar.update(1)
 
 if __name__ == "__main__":
-    events_obj = Events(0.02, delta_eps=0.1)
+    events_obj = Events(0.17, delta_eps=0.1)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    events_obj.loadEventsFromFiles("/home/eshan/Downloads/e_data/flying/", 1, timestamp_col=2) # /home/eshan/Downloads/e_data/flying/
-    events_obj.loadImgMetaData("/home/eshan/Downloads/e_data/flying/indoor_flying1_data.hdf5", (720, 1280), 1200, max_images=1000) # ../data/images.csv
+    events_obj.loadEventsFromFile("/home/eshan/Downloads/REBlur_rawevents/train/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
+    events_obj.loadImgMetaData("/home/eshan/Downloads/REBlur_rawevents/train/1-3-circle-50-zju.h5") # ../data/images.csv
     psnrs = []
     psnr_gt = []
     vid = []
+    vid_gt = []
     count = 0
     for timestamp, img in events_obj._img_meta_data.values:
-        original_img = events_obj.getImage(int(img))
-        blurred_img = cv2.blur(original_img, (5, 5))
-        vid.append(original_img)
+        blurred_img = events_obj.getImage(int(img))
+        original_img = events_obj._gt_img_data[int(img)]
+        vid.append(blurred_img)
+        vid_gt.append(original_img)
         deblurred_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp)).astype(np.uint8)
-        if count % 500 == 0:
-            cv2.imwrite(f"original_drone_{count}.png", original_img)
-            cv2.imwrite(f"blurred_drone_{count}.png", blurred_img)
-            cv2.imwrite(f"deblurred_drone_{count}.png", deblurred_img)
+        if count % 20 == 0:
+            cv2.imwrite(f"original_circle_{count}.png", original_img)
+            cv2.imwrite(f"blurred_circle_{count}.png", blurred_img)
+            cv2.imwrite(f"deblurred_circle_{count}.png", deblurred_img)
         psnr = cv2.PSNR(blurred_img, deblurred_img)
         psnrs.append(psnr)
         psnr_gt.append(cv2.PSNR(blurred_img, original_img))
@@ -279,16 +312,23 @@ if __name__ == "__main__":
     print(f"Std psnr through deblurring: {np.std(psnrs)}")
     print(f"Mean psnr gt: {np.mean(psnr_gt)}")
     print(f"Std psnr gt: {np.std(psnr_gt)}")
-    frames = events_obj.generateFramesByImg(50, 1000)
+    frames_collection = events_obj.generateFramesByImg(100)
     video = []
-    for frame in frames:
-        video.extend(frame)
+    for frames in frames_collection:
+        video.extend(frames)
+    # for frame in video:
+    #     cv2.imshow("frame", frame)
+    #     if cv2.waitKey(1) & 0xFF == ord('q'):
+    #         break
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video = np.array(video)
-    out = cv2.VideoWriter('output_drone.mp4', fourcc, float(events_obj._rgb_framerate * int(len(video)/950)), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    out = cv2.VideoWriter('./output_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs*16.5), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [out.write(frame) for frame in video]
-    orig_out = cv2.VideoWriter('original_drone.mp4', fourcc, float(events_obj._rgb_framerate), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    orig_out = cv2.VideoWriter('./original_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [orig_out.write(frame) for frame in vid]
+    gt_out = cv2.VideoWriter('./gt_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    [gt_out.write(frame) for frame in vid_gt]
     out.release()
     orig_out.release()
+    gt_out.release()
     
