@@ -10,3 +10,4 @@ scipy
 tqdm
 opencv-python
 h5py
+nexusformat
