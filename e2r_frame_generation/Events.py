@@ -287,8 +287,8 @@ class Events:
 if __name__ == "__main__":
     events_obj = Events(0.17, delta_eps=0.1)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    events_obj.loadEventsFromFile("/home/eshan/Downloads/REBlur_rawevents/train/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
-    events_obj.loadImgMetaData("/home/eshan/Downloads/REBlur_rawevents/train/1-3-circle-50-zju.h5") # ../data/images.csv
+    events_obj.loadEventsFromFile("../data/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
+    events_obj.loadImgMetaData("../data/1-3-circle-50-zju.h5") # ../data/images.csv
     psnrs = []
     psnr_gt = []
     vid = []
