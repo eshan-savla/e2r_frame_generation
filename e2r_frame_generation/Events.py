@@ -77,11 +77,6 @@ class Events:
             xs = np.asarray(data['events']['xs'])
             ys = np.asarray(data['events']['ys'])
             ps = np.asarray(data['events']['ps'])
-            # if len(np.unique(ts)) != len(ts):
-            #     print(f"Duplicate timestamps in {filename}")
-            #     duplicate_indices = np.where(np.diff(ts) == 0)[0]
-            #     for idx in duplicate_indices:
-            #         ts[idx+1:] += 1
             events = np.column_stack((ts, xs, ys, ps))
         else:
             raise ValueError("Invalid file format")
@@ -119,11 +114,6 @@ class Events:
             timestamps = []
             self._exposure_time = 0.0
             for image in images:
-                # im = cv2.cvtColor(np.asarray(images[image]), cv2.COLOR_BGR2GRAY)
-                # sharp_im = cv2.cvtColor(np.asarray(sharp_images[image]), cv2.COLOR_BGR2GRAY)
-                # cv2.imshow("image", im)
-                # cv2.imshow("sharp image", sharp_im)
-                # cv2.waitKey(0)
                 timestamps.append(images[image].attrs['timestamp'])
                 self._exposure_time += images[image].attrs['exposure_time']
                 self._img_data.append(cv2.cvtColor(np.asarray(images[image]), cv2.COLOR_BGR2GRAY))
@@ -176,19 +166,26 @@ class Events:
 
         return event_array
 
-    def deblurImage(self, blurred_img: np.ndarray, timestamp: int) -> np.ndarray:
-        average_intensities = np.log(self._computeAverageIntensities(timestamp))
+    def deblurImage(self, blurred_img: np.ndarray, timestamp: int, compute_integral: bool = False) -> np.ndarray:
+        average_intensities = np.log(self._computeAverageIntensities(timestamp, compute_integral))
         blurred_img = self.convertFrameToIntensities(blurred_img)
         return np.subtract(blurred_img, average_intensities)
 
-    def _computeAverageIntensities(self, timestamp: int) -> np.ndarray:
+    def _computeAverageIntensities(self, timestamp: int, compute_integral) -> np.ndarray:
         events_slice_0 = self._getEventsInTimeFrame(timestamp, (timestamp + self._exposure_time/2))
         events_slice_1 = self._getEventsInTimeFrame(timestamp, (timestamp - self._exposure_time/2))
 
-        integrand_0 = np.divide(np.exp(np.multiply(events_slice_0, self._c_threshhold)),self._c_threshhold)
-        integrand_1 = np.divide(np.exp(np.multiply(events_slice_1, self._c_threshhold)),self._c_threshhold)
+        if compute_integral:
+            average_intensities = np.zeros(self._img_resolution, dtype=np.double)
+            for i in tqdm(range(int(timestamp - self._exposure_time/2), int(timestamp + self._exposure_time/2))):
+                average_intensities += np.exp(np.multiply(self._getEventsInTimeFrame(timestamp, i), self._c_threshhold))
+            average_intensities = np.divide(average_intensities, self._exposure_time)
+                
+        else:
+            integrand_0 = np.divide(np.exp(np.multiply(events_slice_0, self._c_threshhold)),self._c_threshhold)
+            integrand_1 = np.divide(np.exp(np.multiply(events_slice_1, self._c_threshhold)),self._c_threshhold)
 
-        average_intensities = np.divide(np.add(integrand_0, integrand_1), 2*self._mean_events_diff)
+            average_intensities = np.divide(np.add(integrand_0, integrand_1), 2*self._mean_events_diff)
 
         return average_intensities
     
@@ -290,6 +287,7 @@ if __name__ == "__main__":
     events_obj.loadEventsFromFile("../data/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
     events_obj.loadImgMetaData("../data/1-3-circle-50-zju.h5") # ../data/images.csv
     psnrs = []
+    psnrs_int = []
     psnr_gt = []
     vid = []
     vid_gt = []
@@ -300,10 +298,14 @@ if __name__ == "__main__":
         vid.append(blurred_img)
         vid_gt.append(original_img)
         deblurred_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp)).astype(np.uint8)
+        deblurred_int_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp, True)).astype(np.uint8)
         if count % 20 == 0:
             cv2.imwrite(f"original_circle_{count}.png", original_img)
             cv2.imwrite(f"blurred_circle_{count}.png", blurred_img)
             cv2.imwrite(f"deblurred_circle_{count}.png", deblurred_img)
+            cv2.imwrite(f"deblurred_int_circle_{count}.png", deblurred_int_img)
+            psnr_int = cv2.PSNR(blurred_img, deblurred_int_img)
+            psnrs_int.append(psnr_int)
         psnr = cv2.PSNR(blurred_img, deblurred_img)
         psnrs.append(psnr)
         psnr_gt.append(cv2.PSNR(blurred_img, original_img))
@@ -312,6 +314,8 @@ if __name__ == "__main__":
     print(f"Std psnr through deblurring: {np.std(psnrs)}")
     print(f"Mean psnr gt: {np.mean(psnr_gt)}")
     print(f"Std psnr gt: {np.std(psnr_gt)}")
+    print(f"Mean psnr through deblurring with integral: {np.mean(psnrs_int)}")
+    print(f"Std psnr through deblurring with integral: {np.std(psnrs_int)}")
     frames_collection = events_obj.generateFramesByImg(100)
     video = []
     for frames in frames_collection:
