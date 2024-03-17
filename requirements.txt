@@ -2,7 +2,6 @@ matplotlib
 matplotlib-inline
 numpy
 oauthlib
-Pillow
 pandas
 pytest
 pytest-cov
@@ -11,3 +10,4 @@ tqdm
 opencv-python
 h5py
 nexusformat
+scikit-image
