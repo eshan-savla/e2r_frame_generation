@@ -6,6 +6,8 @@ from tqdm import tqdm
 from scipy.signal import convolve2d
 import h5py
 import nexusformat.nexus as nx
+import skimage
+import time
 
 class Events:
     # attributes
@@ -107,7 +109,6 @@ class Events:
         elif path_to_file.split(".")[-1] == "hdf5" or path_to_file.split(".")[-1] == "h5":
             self._imgs_in_data = True
             data = nx.nxload(path_to_file)
-            print(data.tree)
             self._img_resolution = data.attrs['sensor_resolution']
             images = data['images']
             sharp_images = data['sharp_images']
@@ -284,38 +285,65 @@ class Events:
 if __name__ == "__main__":
     events_obj = Events(0.17, delta_eps=0.1)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    events_obj.loadEventsFromFile("../data/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
-    events_obj.loadImgMetaData("../data/1-3-circle-50-zju.h5") # ../data/images.csv
+    events_obj.loadEventsFromFile("../data/1-1-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
+    events_obj.loadImgMetaData("../data/1-1-50-zju.h5") # ../data/images.csv
     psnrs = []
+    ssims = []
     psnrs_int = []
+    ssims_int = []
     psnr_gt = []
+    ssims_gt = []
     vid = []
     vid_gt = []
+    times_int = []
+    times = []
     count = 0
     for timestamp, img in events_obj._img_meta_data.values:
         blurred_img = events_obj.getImage(int(img))
         original_img = events_obj._gt_img_data[int(img)]
         vid.append(blurred_img)
         vid_gt.append(original_img)
+        start_time = time.time()
         deblurred_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp)).astype(np.uint8)
+        end_time = time.time()
+        times.append(end_time - start_time)
+        start_time = time.time()
         deblurred_int_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp, True)).astype(np.uint8)
+        end_time = time.time()
+        times_int.append(end_time - start_time)
         if count % 20 == 0:
-            cv2.imwrite(f"original_circle_{count}.png", original_img)
-            cv2.imwrite(f"blurred_circle_{count}.png", blurred_img)
-            cv2.imwrite(f"deblurred_circle_{count}.png", deblurred_img)
-            cv2.imwrite(f"deblurred_int_circle_{count}.png", deblurred_int_img)
-            psnr_int = cv2.PSNR(blurred_img, deblurred_int_img)
-            psnrs_int.append(psnr_int)
-        psnr = cv2.PSNR(blurred_img, deblurred_img)
+            cv2.imwrite(f"original_vert_{count}.png", original_img)
+            cv2.imwrite(f"blurred_vert_{count}.png", blurred_img)
+            cv2.imwrite(f"deblurred_vert_{count}.png", deblurred_img)
+            cv2.imwrite(f"deblurred_int_vert_{count}.png", deblurred_int_img)
+        psnr_int = cv2.PSNR(original_img, deblurred_int_img)
+        psnrs_int.append(psnr_int)
+        psnr = cv2.PSNR(original_img, deblurred_img)
         psnrs.append(psnr)
-        psnr_gt.append(cv2.PSNR(blurred_img, original_img))
+        psnr_gt.append(cv2.PSNR(original_img, blurred_img))
+        ssim = skimage.metrics.structural_similarity(original_img, deblurred_img, full=True)[0]
+        ssims.append(ssim)
+        ssim_int = skimage.metrics.structural_similarity(original_img, deblurred_int_img, full=True)[0]
+        ssims_int.append(ssim_int)
+        ssim_gt = skimage.metrics.structural_similarity(blurred_img, original_img, full=True)[0]
+        ssims_gt.append(ssim_gt)
         count += 1
+    print(f"Mean time for deblurring: {np.mean(times)}")
+    print(f"Std time for deblurring: {np.std(times)}")
+    print(f"Mean time for deblurring with integral: {np.mean(times_int)}")
+    print(f"Std time for deblurring with integral: {np.std(times_int)}")
     print(f"Mean psnr through deblurring: {np.mean(psnrs)}")
     print(f"Std psnr through deblurring: {np.std(psnrs)}")
     print(f"Mean psnr gt: {np.mean(psnr_gt)}")
     print(f"Std psnr gt: {np.std(psnr_gt)}")
     print(f"Mean psnr through deblurring with integral: {np.mean(psnrs_int)}")
     print(f"Std psnr through deblurring with integral: {np.std(psnrs_int)}")
+    print(f"Mean ssim through deblurring: {np.mean(ssims)}")
+    print(f"Std ssim through deblurring: {np.std(ssims)}")
+    print(f"Mean ssim through deblurring with integral: {np.mean(ssims_int)}")
+    print(f"Std ssim through deblurring with integral: {np.std(ssims_int)}")
+    print(f"Mean ssim gt: {np.mean(ssims_gt)}")
+    print(f"Std ssim gt: {np.std(ssims_gt)}")
     frames_collection = events_obj.generateFramesByImg(100)
     video = []
     for frames in frames_collection:
@@ -326,11 +354,13 @@ if __name__ == "__main__":
     #         break
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video = np.array(video)
-    out = cv2.VideoWriter('./output_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs*16.5), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    assert len(vid) == len(vid_gt)
+    output_fps = (len(video)/len(vid)) * (events_obj._avg_frequency_imgs / 12)
+    out = cv2.VideoWriter('./output_vert.mp4', fourcc, float(output_fps), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [out.write(frame) for frame in video]
-    orig_out = cv2.VideoWriter('./original_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    orig_out = cv2.VideoWriter('./original_vert.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [orig_out.write(frame) for frame in vid]
-    gt_out = cv2.VideoWriter('./gt_circle.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    gt_out = cv2.VideoWriter('./gt_vert.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [gt_out.write(frame) for frame in vid_gt]
     out.release()
     orig_out.release()
