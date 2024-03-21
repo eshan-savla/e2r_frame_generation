@@ -272,8 +272,6 @@ class Events:
                 _, base_image = self._getNearestImage(timestamp)
                 frames.append(self.convertIntensitiesToFrame(base_image).astype(np.uint8))
                 while(timestamp < next_timestamp):
-                    if timestamp == 21964189.0:
-                        a = 0
                     event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
                     base_image = np.add(base_image, np.multiply(event_stream, self._c_threshhold))
                     new_frame = self.convertIntensitiesToFrame(base_image).astype(np.uint8)
@@ -282,11 +280,42 @@ class Events:
                 yield frames
                 pbar.update(1)
 
+    def evaluateLatentFrames(self, num_events:int):
+        ssim_vals = []
+        orig_frames = []
+        reconstructed_frames = []
+        for i in tqdm(range(1, self._img_meta_data.shape[0])):
+            next_timestamp = self._img_meta_data.iloc[i, 0]
+            orig_unblurred_img = self._gt_img_data[i]
+            timestamp = self._img_meta_data.iloc[i-1, 0]
+            orig_frames.append(orig_unblurred_img)
+            _, base_img = self._getNearestImage(timestamp)
+            gray_img = self.convertFrameToIntensities(np.full(self._img_resolution, 128, dtype=np.uint8))
+            while (timestamp < next_timestamp):
+                event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
+                base_img = np.add(base_img, np.multiply(event_stream, self._c_threshhold))
+                timestamp = end_timestamp
+            reconstructed_img = self.convertIntensitiesToFrame(base_img).astype(np.uint8)
+            reconstructed_frames.append(reconstructed_img)
+            ssim = skimage.metrics.structural_similarity(orig_unblurred_img, reconstructed_img, full=True)[0]
+            ssim_vals.append(ssim)
+
+        return ssim_vals, reconstructed_frames, orig_frames
+            
+
 if __name__ == "__main__":
-    events_obj = Events(0.17, delta_eps=0.1)
+    events_obj = Events(0.17, delta_eps=0.0)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    events_obj.loadEventsFromFile("../data/1-1-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
-    events_obj.loadImgMetaData("../data/1-1-50-zju.h5") # ../data/images.csv
+    events_obj.loadEventsFromFile("../data/1-3-circle-50-zju.h5", timestamp_col=0) # /home/eshan/Downloads/e_data/flying/
+    events_obj.loadImgMetaData("../data/1-3-circle-50-zju.h5") # ../data/images.csv
+    ssims, reconstructeds, origs = events_obj.evaluateLatentFrames(100)
+    print(f"Average ssim of latent-orignal images: {np.mean(ssims)}")
+    print(f"Standard deviation ssim of latent-orignal frames: {np.std(ssims)}")
+
+    for i in range(0, len(origs), 20):
+        cv2.imwrite(f"original_frame_circ_{i}.png", origs[i])
+        cv2.imwrite(f"reconstructed_frame_circ_{i}.png", reconstructeds[i])
+
     psnrs = []
     ssims = []
     psnrs_int = []
@@ -312,10 +341,10 @@ if __name__ == "__main__":
         end_time = time.time()
         times_int.append(end_time - start_time)
         if count % 20 == 0:
-            cv2.imwrite(f"original_vert_{count}.png", original_img)
-            cv2.imwrite(f"blurred_vert_{count}.png", blurred_img)
-            cv2.imwrite(f"deblurred_vert_{count}.png", deblurred_img)
-            cv2.imwrite(f"deblurred_int_vert_{count}.png", deblurred_int_img)
+            cv2.imwrite(f"original_circ_{count}.png", original_img)
+            cv2.imwrite(f"blurred_circ_{count}.png", blurred_img)
+            cv2.imwrite(f"deblurred_circ_{count}.png", deblurred_img)
+            cv2.imwrite(f"deblurred_int_circ_{count}.png", deblurred_int_img)
         psnr_int = cv2.PSNR(original_img, deblurred_int_img)
         psnrs_int.append(psnr_int)
         psnr = cv2.PSNR(original_img, deblurred_img)
@@ -348,19 +377,15 @@ if __name__ == "__main__":
     video = []
     for frames in frames_collection:
         video.extend(frames)
-    # for frame in video:
-    #     cv2.imshow("frame", frame)
-    #     if cv2.waitKey(1) & 0xFF == ord('q'):
-    #         break
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video = np.array(video)
     assert len(vid) == len(vid_gt)
     output_fps = (len(video)/len(vid)) * (events_obj._avg_frequency_imgs / 12)
-    out = cv2.VideoWriter('./output_vert.mp4', fourcc, float(output_fps), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    out = cv2.VideoWriter('./output_circ.mp4', fourcc, float(output_fps), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [out.write(frame) for frame in video]
-    orig_out = cv2.VideoWriter('./original_vert.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    orig_out = cv2.VideoWriter('./original_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [orig_out.write(frame) for frame in vid]
-    gt_out = cv2.VideoWriter('./gt_vert.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    gt_out = cv2.VideoWriter('./gt_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [gt_out.write(frame) for frame in vid_gt]
     out.release()
     orig_out.release()
