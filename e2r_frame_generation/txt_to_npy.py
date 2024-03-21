@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import argparse
 
 def main(filepath:str):
     with open(filepath) as f:
@@ -18,5 +19,9 @@ def main(filepath:str):
 
 
 if __name__ == "__main__":
-    main("/home/eshan/Downloads/e_data/images.txt")
+    parser = argparse.ArgumentParser(description='Process filepath.')
+    parser.add_argument('filepath', type=str, help='Path to the file')
+    args = parser.parse_args()
+
+    main(args.filepath)
     print("Done!")
