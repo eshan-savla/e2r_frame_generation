@@ -5,18 +5,11 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIR})
 set(SRC
 ./Colorizer.cpp
-# ./fmg.cpp
-# ./mg.cpp
-# ./tensor2d.cpp
-# ./tensor3d.cpp
 )
 
 set(HDRS
 ${PROJECT_SOURCE_DIR}/include/Colorizer.h
-# ${PROJECT_SOURCE_DIR}/include/fmg.h
-# ${PROJECT_SOURCE_DIR}/include/mg.h
-# ${PROJECT_SOURCE_DIR}/include/tensor2d.h
-# ${PROJECT_SOURCE_DIR}/include/tensor3d.h
+
 )
 
 add_library(${LIB_NAME} STATIC ${SRC} ${HDRS})
