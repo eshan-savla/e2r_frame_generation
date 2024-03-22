@@ -540,7 +540,7 @@ if __name__ == "__main__":
         deblurred_int_img = events_obj.convertIntensitiesToFrame(events_obj.deblurImage(blurred_img, timestamp, True)).astype(np.uint8)
         end_time = time.time()
         times_int.append(end_time - start_time)
-        # saving explary deblurred, blurred and ground truth images.
+        # saving exemplary deblurred, blurred and ground truth images.
         if count % 20 == 0:
             cv2.imwrite(f"original_circ_{count}.png", original_img)
             cv2.imwrite(f"blurred_circ_{count}.png", blurred_img)

@@ -2,7 +2,7 @@ import numpy as np
 import os
 import argparse
 
-def main(filepath:str):
+def main(filepath:str): #Script to convert txt files to npy files for easy loading
     with open(filepath) as f:
         filename = filepath.split("/")[-1].split(".")[0]
         assert(filename != "", "Filename is empty")

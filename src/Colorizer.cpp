@@ -8,38 +8,37 @@
 using namespace colorizer;
 Colorizer::Colorizer() = default;
 
+/**
+ * @brief Constructs a Colorizer object with the given reference image.
+ *
+ * This constructor initializes a Colorizer object with the provided reference image.
+ *
+ * @param reference_img The reference image used for colorization.
+ */
 Colorizer::Colorizer(const cv::Mat &reference_img) {
     setReferenceImg(reference_img);
 }
 
 
 // Setters & Getters
+/**
+ * @brief Sets the reference image for colorization.
+ * 
+ * This function sets the reference image that will be used for colorization.
+ * The reference image should be passed as a `cv::Mat` object.
+ * 
+ * @param reference_img The reference image to be set.
+ */
 void Colorizer::setReferenceImg(const cv::Mat &reference_img){
     this->reference_img = reference_img;
-    cv::cvtColor(reference_img, preprocessed_ref_img, cv::COLOR_BGR2Lab);
-    superpixels_ref = createSuperPixels(preprocessed_ref_img, 40);
-    superpixels_ref->getLabels(ref_superpixels_labels);
+    cv::cvtColor(reference_img, preprocessed_ref_img, cv::COLOR_BGR2Lab); // Convert to Lab color space
+    superpixels_ref = createSuperPixels(preprocessed_ref_img, 40); // Creates superpixels of average size of 40 pixels
+    superpixels_ref->getLabels(ref_superpixels_labels); // Get labels of image pixels. Each pixel is assigned a superpixel label.
     int num_suppix = superpixels_ref->getNumberOfSuperpixels();
     std::cout << "Computing features for reference image... \n";
     std::vector<cv::Scalar> ref_superpixels_features_vec = extractFeatures(preprocessed_ref_img, ref_superpixels_labels, num_suppix);
-    cv::Mat features_matrix(superpixels_ref->getNumberOfSuperpixels(), 172, CV_64FC4, ref_superpixels_features_vec.data());
+    cv::Mat features_matrix(superpixels_ref->getNumberOfSuperpixels(), 172, CV_64FC4, ref_superpixels_features_vec.data()); // 172 dimensional feature Matrix containing intensity, std-dev, gabor and surf features.
     ref_superpixels_features = features_matrix;
-}
-void Colorizer::setSuperPixelAlgorithm(const std::string &superpixel_algorithm){
-    superpixel_algo = evaluateAlgo(superpixel_algorithm);
-}
-
-
-cv::ximgproc::SLICType Colorizer::evaluateAlgo(const std::string &algorithm)
-{
-    if (algorithm == "SLIC")
-        return cv::ximgproc::SLIC;
-    if(algorithm == "SLICO")
-        return cv::ximgproc::SLICO;
-    if(algorithm == "MSLIC")
-        return cv::ximgproc::MSLIC;
-    else
-        return cv::ximgproc::SLIC;
 }
 
 cv::Mat Colorizer::blurImage(const cv::Mat & input_img) {
@@ -59,30 +58,34 @@ int Colorizer::colorizeGreyScale(const cv::Mat &input_img, cv::Mat &output_img) 
     if (superpixels_ref.empty()) {
         return -1;
     }
-//    if (input_img.channels() > 1) {
-//        return -1;
-//    }
     auto input_superpixels = createSuperPixels(input_img, 40);
     cv::Mat superpixels_labels;
-    input_superpixels->getLabels(superpixels_labels);
+    input_superpixels->getLabels(superpixels_labels); // Get labels of image pixels. Each pixel is assigned a superpixel label.
     num_superpixels = static_cast<int>(input_superpixels->getNumberOfSuperpixels());
     std::cout << "Computing features for input image... \n";
     std::vector<cv::Scalar> target_feature_vecs = extractFeatures(input_img, superpixels_labels, num_superpixels);
-    cv::Mat target_feature_matrix(num_superpixels, 172, CV_64FC4, target_feature_vecs.data());
+    cv::Mat target_feature_matrix(num_superpixels, 172, CV_64FC4, target_feature_vecs.data()); // 172 dimensional feature Matrix containing intensity, std-dev, gabor and surf features.
     cv::Mat outputLabels;
     std::cout << "Matching features... \n";
-    std::vector<int> target_ref_matches = cascadeFeatureMatching(target_feature_matrix, superpixels_labels, num_superpixels);
+    std::vector<int> target_ref_matches = cascadeFeatureMatching(target_feature_matrix, superpixels_labels, num_superpixels);// Match features of input image with reference image.
     int input_img_channels = input_img.channels();
     int target_feature_matrix_channels = target_feature_matrix.channels();
     assert(input_img.channels() == target_feature_matrix.channels());
     int ref_num_superpixels = superpixels_ref->getNumberOfSuperpixels();
     std::cout << "Applying color transfer... \n";
-    cv::Mat scribbled_img = applyColorTransfer(input_img, superpixels_labels, num_superpixels, target_ref_matches);
-
+    cv::Mat scribbled_img = applyColorTransfer(input_img, superpixels_labels, num_superpixels, target_ref_matches); // Apply color transfer to input image. Transfer avg color of reference superpixel to centre of b/w superpixel as scribbles.
     output_img = scribbled_img;
     return 0;
 }
 
+/**
+ * Creates superpixels using the SuperpixelLSC algorithm.
+ *
+ * @param input_img The input image on which superpixels will be created.
+ * @param region_size The desired size of each superpixel region.
+ * @param ruler The parameter controlling the compactness of the superpixels.
+ * @return A pointer to the created SuperpixelLSC object.
+ */
 cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(const cv::Mat &input_img, uint region_size, float ruler) {
     cv::Mat output_labels;
     cv::Mat blurred_img = blurImage(input_img);
@@ -94,6 +97,13 @@ cv::Ptr<cv::ximgproc::SuperpixelLSC> Colorizer::createSuperPixels(const cv::Mat 
 }
 
 std::vector<cv::Scalar>
+/**
+ * Extracts features from the input image and input superpixels.
+ *
+ * @param input_img The input image.
+ * @param input_superpixels Superpixels labels for each image pixel.
+ * @param num_superpixels The number of superpixels.
+ */
 Colorizer::extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superpixels, const std::size_t num_superpixels) {
     std::vector<cv::Scalar> average_intensities = computeAverageIntensities(input_img, input_superpixels, num_superpixels);
     std::cout << "Computed average intensities" << std::endl;
@@ -125,29 +135,45 @@ Colorizer::extractFeatures(const cv::Mat &input_img, const cv::Mat &input_superp
 }
 
 std::vector<int>
+/**
+ * Performs cascade feature matching on the given target features and target superpixels.
+ *
+ * @param target_features The target features to match.
+ * @param target_superpixels Superpixels labels for each target image pixel.
+ * @param target_num_superpixels The number of target superpixels.
+ */
 Colorizer::cascadeFeatureMatching(const cv::Mat &target_features, const cv::Mat &target_superpixels, const int target_num_superpixels) {
-    double weights[4] = {0.2, 0.5, 0.2 , 0.1};
+    double weights[4] = {0.2, 0.5, 0.2 , 0.1}; // Weights for feature matching for each feature type: intensity, std-dev, gabor and surf.
     std::vector<int> target_ref_matches_map(target_num_superpixels, 0);
     for (int i = 0; i < target_num_superpixels; i++) {
         cv::Mat target_feature = target_features.row(i);
-        int indexes[6] = {0, 40, 168, 169, 170, 171};
-        std::vector<int> ref_superpixels_indexes(superpixels_ref->getNumberOfSuperpixels());
+        int indexes[6] = {0, 40, 168, 169, 170, 171}; // Indexes for each feature type in the feature matrix.
+        std::vector<int> ref_superpixels_indexes(superpixels_ref->getNumberOfSuperpixels()); // Vector to store reference superpixel indexes matched with respective target superpixel.
         std::iota(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), 0);
         for (int j = 1; j < 6; j++) {
-            matchFeatures(target_feature.colRange(indexes[j-1], indexes[j]), ref_superpixels_features.colRange(indexes[j-1], indexes[j]), ref_superpixels_indexes);
-            ref_superpixels_indexes = std::vector<int>(ref_superpixels_indexes.begin(), ref_superpixels_indexes.begin() + float(ref_superpixels_indexes.size())/2);
+            matchFeatures(target_feature.colRange(indexes[j-1], indexes[j]), ref_superpixels_features.colRange(indexes[j-1], indexes[j]), ref_superpixels_indexes); // Match features for each feature type.
+            ref_superpixels_indexes = std::vector<int>(ref_superpixels_indexes.begin(), ref_superpixels_indexes.begin() + float(ref_superpixels_indexes.size())/2); // Keep only top 50% matches.
         }
-        int best_match_index = *std::min_element(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), [&](int a, int b) {
+        int best_match_index = *std::min_element(ref_superpixels_indexes.begin(), ref_superpixels_indexes.end(), [&](int a, int b) { // Find best match from the remaining matches.
             float costA, costB;
             costA = weights[0] * cv::norm(target_feature.colRange(0, 40) - ref_superpixels_features.colRange(0, 40).row(a)) + weights[1] * cv::norm(target_feature.colRange(40, 168) - ref_superpixels_features.colRange(40, 168).row(a)) + weights[2] * cv::norm(target_feature.colRange(168, 170) - ref_superpixels_features.colRange(168, 170).row(a)) + weights[3] * cv::norm(target_feature.colRange(170, 172) - ref_superpixels_features.colRange(170, 172).row(a));
             costB = weights[0] * cv::norm(target_feature.colRange(0, 40) - ref_superpixels_features.colRange(0, 40).row(b)) + weights[1] * cv::norm(target_feature.colRange(40, 168) - ref_superpixels_features.colRange(40, 168).row(b)) + weights[2] * cv::norm(target_feature.colRange(168, 170) - ref_superpixels_features.colRange(168, 170).row(b)) + weights[3] * cv::norm(target_feature.colRange(170, 172) - ref_superpixels_features.colRange(170, 172).row(b));
             return costA < costB;
         });
-        target_ref_matches_map[i] = best_match_index;
+        target_ref_matches_map[i] = best_match_index; // Store best match reference superpixel for target superpixel.
     }
     return target_ref_matches_map;
 }
 
+/**
+ * Applies color transfer to the input image based on the input superpixels and target reference matches.
+ *
+ * @param input_img The input image to apply color transfer to.
+ * @param input_superpixels Superpixels labels for each pixel of input b/w image.
+ * @param num_superpixels The number of superpixels in the input image.
+ * @param target_ref_matches The best reference superpixel matches of reference image to input superpixels.
+ * @return The color transferred image.
+ */
 cv::Mat Colorizer::applyColorTransfer(const cv::Mat &input_img, const cv::Mat &input_superpixels,
                                       const unsigned int &num_superpixels, const std::vector<int> &target_ref_matches) {
     cv::Mat output_img = cv::Mat::zeros(input_img.size(), input_img.type());
@@ -157,7 +183,7 @@ cv::Mat Colorizer::applyColorTransfer(const cv::Mat &input_img, const cv::Mat &i
     cv::Mat input_img_cie;
     cv::cvtColor(input_img, input_img_cie, cv::COLOR_BGRA2BGR);
     cv::cvtColor(input_img_cie, input_img_cie, cv::COLOR_BGR2Lab);
-    int pos[] = {-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6};
+    int pos[] = {-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6}; // Array defining size of neighbourhood to transfer color. Magnification based size of array
     for (int i = 0; i < num_superpixels; i++) {
         cv::Vec3d average_color = computeAverageColor(input_superpixels, i);
         cv::Point target_superpixel_centroid = computeCentroids(input_superpixels, i);
@@ -167,16 +193,23 @@ cv::Mat Colorizer::applyColorTransfer(const cv::Mat &input_img, const cv::Mat &i
                 int y = target_superpixel_centroid.y + po2;
                 if(x < 0 || x >= input_img.cols || y < 0 || y >= input_img.rows)
                     continue;
+                // Only transfer chromatic values of reference superpixel to input superpixel. Keep luminance of input superpixel.
                 input_img_cie.at<cv::Vec3b>(y, x)[1] = average_color[1];
                 input_img_cie.at<cv::Vec3b>(y, x)[2] = average_color[2];
             }
         }
     }
-    // transferColors(input_img_cpy, input_img_cie, output_img);
     cv::cvtColor(input_img_cie, output_img, cv::COLOR_Lab2BGR);
     return output_img;
 }
 
+/**
+ * Computes the centroids of the given superpixels for a specific label.
+ *
+ * @param superpixels The input matrix containing the superpixels.
+ * @param label The label of the superpixels for which centroids need to be computed.
+ * @return The computed centroids as a cv::Point2i object.
+ */
 cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const int &label) {
     cv::Mat mask;
     mask = (superpixels == label);
@@ -186,12 +219,30 @@ cv::Point2i Colorizer::computeCentroids(const cv::Mat &superpixels, const int &l
     return {static_cast<int>(M.m10/M.m00),static_cast<int>(M.m01/M.m00)};
 }
 
+/**
+ * Matches features between target and reference images.
+ *
+ * This function takes in target and reference feature matrices and matches the features between them by calculating euclidian distance between feautres.
+ * The matched features are stored in the `ref_superpixels` vector.
+ *
+ * @param target_features The feature matrix of the target image.
+ * @param ref_features The feature matrix of the reference image.
+ * @param ref_superpixels The vector to store the matched features.
+ */
 void Colorizer::matchFeatures(const cv::Mat &target_features, const cv::Mat &ref_features, std::vector<int> &ref_superpixels) {
     std::sort(ref_superpixels.begin(), ref_superpixels.end(), [&](unsigned int a, unsigned int b) {
         return cv::norm(target_features - ref_features.row(a)) < cv::norm(target_features - ref_features.row(b));
     });    
 }
 
+/**
+ * Computes the average intensities for each superpixel in the input image.
+ *
+ * @param input_img The input image.
+ * @param labels The labels matrix indicating the superpixel labels for each pixel.
+ * @param num_superpixels The number of superpixels in the image.
+ * @return A vector of cv::Scalar containing the average intensities for each superpixel.
+ */
 std::vector<cv::Scalar> Colorizer::computeAverageIntensities(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
     std::vector<cv::Scalar> average_intensities(num_superpixels);
     for (std::size_t i = 0; i < num_superpixels; i++) {
@@ -202,6 +253,12 @@ std::vector<cv::Scalar> Colorizer::computeAverageIntensities(const cv::Mat &inpu
     return average_intensities;
 }
 
+/**
+ * Computes the standard deviation of each pixel in the input image.
+ *
+ * @param input_img The input image for which to compute the pixel standard deviation.
+ * @param stddev_img The output image where the computed pixel standard deviation will be stored.
+ */
 void Colorizer::computePixelStdDev(const cv::Mat &input_img, cv::Mat &stddev_img){
     cv::Mat mean, sqmean;    
     cv::boxFilter(input_img, mean, CV_32F, cv::Size(5,5), cv::Point(-1,-1), true, cv::BORDER_REPLICATE);
@@ -209,6 +266,14 @@ void Colorizer::computePixelStdDev(const cv::Mat &input_img, cv::Mat &stddev_img
     cv::sqrt(sqmean - mean.mul(mean), stddev_img);
 }
 
+/**
+ * Computes the average and standard deviation of color values for each superpixel in the input image.
+ *
+ * @param input_img The input image.
+ * @param labels The label image indicating the superpixel labels.
+ * @param num_superpixels The number of superpixels in the image.
+ * @return A vector of cv::Scalar objects representing the average and standard deviation of color values for each superpixel.
+ */
 std::vector<cv::Scalar> Colorizer::computeAverageStdDev(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
     std::vector<cv::Scalar> average_stddevs(num_superpixels);
     cv::Mat stddev_img;
@@ -221,6 +286,13 @@ std::vector<cv::Scalar> Colorizer::computeAverageStdDev(const cv::Mat &input_img
     return average_stddevs;
 }
 
+/**
+ * Finds the neighboring superpixels for each superpixel in the given image.
+ *
+ * @param labels The labels matrix containing superpixel label for each image.
+ * @param num_superpixels The total number of superpixels in the image.
+ * @return A vector of sets, where each set represents the neighbors of a superpixel.
+ */
 std::vector<std::set<unsigned int>> Colorizer::findSuperPixelNeighbours(const cv::Mat &labels, const std::size_t num_superpixels) {
     std::vector<std::set<unsigned int>> neighbours(num_superpixels);
 
@@ -245,6 +317,14 @@ std::vector<std::set<unsigned int>> Colorizer::findSuperPixelNeighbours(const cv
     return neighbours;
 }
 
+/**
+ * Computes the average intensities of the neighbors for each superpixel.
+ *
+ * @param neighbourhoods A vector of sets representing the neighborhoods of each superpixel.
+ * @param num_superpixels The total number of superpixels.
+ * @param avgIntensities A vector of cv::Scalar representing the average intensities of each superpixel.
+ * @return A vector of cv::Scalar representing the computed average intensities of the neighbors for each superpixel.
+ */
 std::vector<cv::Scalar> Colorizer::computeAverageNeighbourIntensities(const std::vector<std::set<unsigned int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgIntensities) {
     std::vector<cv::Scalar> average_neighbour_intensities(num_superpixels);
     for (std::size_t label = 0; label < num_superpixels; label++) {
@@ -258,6 +338,14 @@ std::vector<cv::Scalar> Colorizer::computeAverageNeighbourIntensities(const std:
     return average_neighbour_intensities;
 }
 
+/**
+ * Computes the average standard deviation of the neighbors for each superpixel.
+ *
+ * @param neighbourhoods A vector of sets representing the neighborhoods of each superpixel.
+ * @param num_superpixels The total number of superpixels.
+ * @param avgStdDev A vector of cv::Scalar representing the average standard deviation for each superpixel.
+ * @return A vector of cv::Scalar representing the computed average standard deviation for each superpixel.
+ */
 std::vector<cv::Scalar> Colorizer::computeAverageNeighbourStdDev(const std::vector<std::set<unsigned int>> &neighbourhoods, const std::size_t num_superpixels, std::vector<cv::Scalar> avgStdDev) {
     std::vector<cv::Scalar> average_neighbour_stddevs(num_superpixels);
     for (std::size_t label = 0; label < num_superpixels; label++) {
@@ -271,10 +359,26 @@ std::vector<cv::Scalar> Colorizer::computeAverageNeighbourStdDev(const std::vect
     return average_neighbour_stddevs;
 }
 
+/**
+ * Applies a feature kernel to the input image and stores the result in the output image.
+ *
+ * @param input_img The input image to apply the feature kernel to.
+ * @param kenel The feature kernel to apply.
+ * @param output_img The output image to store the result.
+ */
 void Colorizer::applyFeatureKernel(const cv::Mat &input_img, const cv::Mat &kenel, cv::Mat &output_img) {
     cv::filter2D(input_img, output_img, -1, kenel);
 }
 
+/**
+ * Computes the average feature kernel for a given input image, labels, number of superpixels, and kernel.
+ *
+ * @param input_img The input image.
+ * @param labels The labels matrix containing superpixel label of each pixel.
+ * @param num_superpixels The number of superpixels.
+ * @param kernel The kernel matrix.
+ * @return A vector of cv::Scalar representing the computed average feature kernel.
+ */
 std::vector<cv::Scalar> Colorizer::computeAverageFeatureKernel(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels, const cv::Mat &kernel) {
     std::vector<cv::Scalar> average_feature_kernels(num_superpixels);
     for (std::size_t i = 0; i < num_superpixels; i++) {
@@ -288,6 +392,14 @@ std::vector<cv::Scalar> Colorizer::computeAverageFeatureKernel(const cv::Mat &in
 }
 
 std::vector<std::vector<cv::Scalar>>
+/**
+ * Calculates and returns the Gabor features for the given input image.
+ *
+ * @param input_img The input image for which Gabor features need to be calculated.
+ * @param labels The labels matrix containing superpixel label of each pixel.
+ * @param num_superpixels The number of superpixels in the input image.
+ * @return The calculated Gabor features.
+ */
 Colorizer::returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
     std::vector<std::vector<cv::Scalar>> gaborFeatures(num_superpixels, std::vector<cv::Scalar>(40));
     double thetas[8] = {0, M_1_PI/8, 2*M_1_PI/8, 3*M_1_PI/8, 4*M_1_PI/8, 5*M_1_PI/8, 6*M_1_PI/8, 7*M_1_PI/8};
@@ -305,6 +417,14 @@ Colorizer::returnGaborFeatures(const cv::Mat &input_img, const cv::Mat &labels, 
     return gaborFeatures;
 }
 
+/**
+ * Applies the SURF algorithm to detect keypoints and compute descriptors on the input image.
+ *
+ * @param input_img The input image on which SURF algorithm will be applied.
+ * @param mask The optional mask specifying where to look for keypoints.
+ * @param descriptors The computed descriptors for the detected keypoints.
+ * @return A vector of keypoints detected in the input image.
+ */
 std::vector<cv::KeyPoint>  Colorizer::applySURF(const cv::Mat &input_img, const cv::Mat &mask, cv::Mat &descriptors) {
     cv::Ptr<cv::xfeatures2d::SURF> surf = cv::xfeatures2d::SURF::create();
     surf->setHessianThreshold(400);
@@ -315,6 +435,14 @@ std::vector<cv::KeyPoint>  Colorizer::applySURF(const cv::Mat &input_img, const 
     return keypoints;
 }
 
+/**
+ * Returns the SURF features for the given input image, labels, and number of superpixels.
+ *
+ * @param input_img The input image for which SURF features are to be computed.
+ * @param labels The labels corresponding to the superpixels in the input image.
+ * @param num_superpixels The number of superpixels in the input image.
+ * @return A vector of vectors of cv::Scalar representing the SURF features for each superpixel.
+ */
 std::vector<std::vector<cv::Scalar>> Colorizer::returnSURFFeatures(const cv::Mat &input_img, const cv::Mat &labels, const std::size_t num_superpixels) {
     std::vector<std::vector<cv::Scalar>> surfFeatures(num_superpixels, std::vector<cv::Scalar>(128));
     for (int i = 0; i < num_superpixels; i++) {
@@ -333,6 +461,13 @@ std::vector<std::vector<cv::Scalar>> Colorizer::returnSURFFeatures(const cv::Mat
     return surfFeatures;
 }
 
+/**
+ * Transfers colors from a scribbled image to a black and white image. This method is incomplete and is only here as reference for future work
+ *
+ * @param bw_image The black and white image.
+ * @param scribbled_image The scribbled image containing color information.
+ * @param output_img The output image with transferred colors.
+ */
 void Colorizer::transferColors(const cv::Mat &bw_image, const cv::Mat &scribbled_image, cv::Mat &output_img) {
 
     cv::Mat original = bw_image.clone();
@@ -367,12 +502,26 @@ void Colorizer::transferColors(const cv::Mat &bw_image, const cv::Mat &scribbled
     output_img = getColorExact(colorIm, ntscIm);
 }
 
+/**
+ * Computes the average color of a superpixel in the given image.
+ *
+ * @param superpixel The superpixel region represented as a cv::Mat.
+ * @param label The label of the superpixel.
+ * @return The average color of the superpixel as a cv::Vec3d.
+ */
 cv::Vec3d Colorizer::computeAverageColor(const cv::Mat &superpixel, int label) {
     cv::Mat mask = (superpixel == label);
     cv::Scalar mean = cv::mean(ref_img_lab, mask);
     return cv::Vec3b(mean[0], mean[1], mean[2]);
 }
 
+/**
+ * Calculates the sum of absolute differences between two input images.
+ *
+ * @param img1 The first input image.
+ * @param img2 The second input image.
+ * @return The resulting image containing the sum of absolute differences.
+ */
 cv::Mat Colorizer::sumAbsDiff(const cv::Mat &img1, const cv::Mat &img2) {
     cv::Mat diff(img1.size(), img1.type());
     cv::absdiff(img1, img2, diff);
@@ -383,13 +532,19 @@ cv::Mat Colorizer::sumAbsDiff(const cv::Mat &img1, const cv::Mat &img2) {
     return sumAbsDiff;
 }
 
+/**
+ * Spreads color in input image with color scribbles. This method implementation is incomplete and is only here as reference for future work.
+ *
+ * @param color_img Boolean matrix flagging which pixel is colored.
+ * @param yuv_img The lab b/w image with color scribbles.
+ * @return The color from the color image.
+ */
 cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_img) {
     int n = yuv_img.rows;
     int m = yuv_img.cols;
     int img_size = n * m;
     cv::Mat nI = yuv_img.clone();
     Eigen::MatrixXi indices_matrix(n,m);
-    // cv::Mat indices_matrix(n,m,CV_32S);
     int counter = 0;
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
@@ -416,15 +571,11 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
     std::vector<double> vals(max_nr, 0);
     Eigen::VectorXd gvals = Eigen::VectorXd::Zero(nr_of_px_in_wd);
 
-    // int length = 0;
-    // int pixel_nr = 0;
-
     for (int j = 0; j < m; j++) {
         for (int i = 0; i < n; i++) {
             consts_len = consts_len + 1;
             if(!color_img.at<uchar>(i,j)) {
                 int tlen = 0;
-                // Eigen::VectorXd window_vals = Eigen::VectorXd::Zero(nr_of_px_in_wd);
                 for (int ii = std::max(0, i -wd); ii <= std::min(i + wd, n - 1); ii++) {
                     for (int jj = std::max(0, j - wd); jj <= std::min(j + wd, m - 1); jj++) {
                         if (ii != i && jj != j) {
@@ -432,15 +583,11 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
                             row_inds[len - 1] = consts_len;
                             col_inds[len - 1] = indices_matrix(ii,jj);
                             gvals(tlen - 1) = yuv_img.at<cv::Scalar>(ii,jj)[0];
-                            // window_vals(window_index) = yuv_img.at<cv::Scalar>(i+ii,j+jj)[0];
-                            // length++;
-                            // window_index++;
                         }
                     }
                 }
                 auto t_vals = yuv_img.at<cv::Vec3f >(i,j);
                 float t_val = yuv_img.at<cv::Vec3f>(i,j)[0];
-                // window_vals(window_index) = center;
                 gvals(tlen) = static_cast<double>(t_val);
                 double mean = gvals.head(tlen+1).mean();
                 double c_var = (gvals.head(tlen+1).array() - mean).square().mean();
@@ -473,7 +620,6 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
             int b = 0;
         triplets.push_back(Eigen::Triplet<double>(row_inds[i], col_inds[i], vals[i]));
     }
-//    Eigen::SparseMatrix<double> A(consts_len, img_size);
     Eigen::SparseMatrix<double> A(triplets.size(), triplets.size());
 
     A.setFromTriplets(triplets.begin(), triplets.end());
@@ -494,150 +640,3 @@ cv::Mat Colorizer::getColorExact(const cv::Mat &color_img, const cv::Mat &yuv_im
     cv::cvtColor(nI, nI, cv::COLOR_Lab2BGR);
     return nI;
 }
-
-// cv::Mat Colorizer::getVolColor(const cv::Mat &color_img, const cv::Mat &yuv_img, float dy_pr = 0.0f, float dx_pr = 0.0f, float idy_pr = 0.0f, float idx_pr = 0.0f, int in_itr_num = 5, int out_itr_num = 1){
-//     int winSize=int(dy_pr+0.5);
-//     int deg=int(dx_pr+0.5);
-//     Eigen::Tensor<float, 3, Eigen::RowMajor> yuv_img_tensor;
-//     cv::cv2eigen(yuv_img, yuv_img_tensor);
-//     auto sizes = yuv_img_tensor.dimensions();
-//     int sizel;
-//     sizel=yuv_img.dims;
-//     assert(sizel>2);
-//     int n=yuv_img.rows;
-//     int m=yuv_img.cols;
-//     int k,max_d, max_d1,max_d2, in_itr_num, out_itr_num, itr;
-//     int x,y,z;
-
-//     if (sizel>3){
-//     k=sizes[3];
-//     }else{
-//     k=1;
-//     }
-//     max_d1=int(floor(log(n)/log(2)-2)+0.1);
-//     max_d2=int(floor(log(m)/log(2)-2)+0.1);
-//     if (max_d1>max_d2){
-//     max_d=max_d2;
-//     }else{
-//     max_d=max_d1;
-//     }
-//     //   double *lblImg_pr, *img_pr;
-//     double * res_pr;
-//     double **res_prv;
-//     double *dx_pr,*dy_pr,*idx_pr,*idy_pr;
-//     //   lblImg_pr=mxGetPr(prhs[0]);
-
-//     //   img_pr=mxGetPr(prhs[1]);
-//     Tensor3d D,G,I;
-//     Tensor3d Dx,Dy,iDx,iDy;
-//     MG smk;
-//     G.set(m,n,k);
-//     D.set(m,n,k);
-//     I.set(m,n,k);
-
-//     if (in_itr_num!=5){
-//     in_itr_num=int(in_itr_num+0.5);
-//     }
-//     if (out_itr_num!=2){
-//     out_itr_num=int(out_itr_num+0.5);
-//     }
-
-//     Dx.set(m,n,k-1);
-//     Dy.set(m,n,k-1);
-//     iDx.set(m,n,k-1);
-//     iDy.set(m,n,k-1);
-//     for ( z=0; z<(k-1); z++){
-//     for ( y=0; y<n; y++){
-//         for ( x=0; x<m; x++){
-//     Dx(x,y,z)=dx_pr; dx_pr++;
-//     Dy(x,y,z)=dy_pr; dy_pr++;
-//     iDx(x,y,z)=idx_pr; idx_pr++;
-//     iDy(x,y,z)=idy_pr; idy_pr++;
-//         }
-//     }
-//     }
-
-//     int dims[4];
-//     dims[0]=m; dims[1]=n; dims[2]=3; dims[3]=k;
-//     // output_img=mxCreateNumericArray(4,dims,  mxDOUBLE_CLASS ,mxREAL);
-//     Eigen::Tensor<double, 4, Eigen::RowMajor> output_img_tensor(m,n,3,k);
-//     res_pr=mxGetPr(plhs[0]);
-//     res_prv=new double*[k];
-//     for (z=0; z<k; z++){
-//     res_prv[z]=res_pr+n*m*3*z;
-//     }
-
-
-//     for ( z=0; z<k; z++){
-//     for ( y=0; y<n; y++){
-//         for ( x=0; x<m; x++){
-//     I(x,y,z)=lblImg_pr[x+m*y+z*n*m];
-//     G(x,y,z)=img_pr[x+y*m+z*m*n*3];
-//     I(x,y,z)=!I(x,y,z);     
-//         }
-//     }
-//     }
-
-//     for ( z=0; z<k; z++){
-//     for ( y=0; y<n; y++){
-//         for ( x=0; x<m; x++){
-//     (*res_prv[z])=G(x,y,z);
-//     res_prv[z]++;
-//         }
-//     }
-//     }
-//     smk.set(m,n,k,max_d);
-//     smk.setI(I) ;
-//     smk.setG(G);
-//     smk.setFlow(Dx,Dy,iDx,iDy);
-
-//     for (int t=1; t<3; t++){
-//         for ( z=0; z<k; z++){
-//         for ( y=0; y<n; y++){
-//         for ( x=0; x<m; x++){
-//         D(x,y,z)=img_pr[x+y*m+n*m*t+z*m*n*3];
-//         smk.P()(x,y,z)=img_pr[x+y*m+n*m*t+z*m*n*3];
-//         D(x,y,z)*=(!I(x,y,z));
-//         }
-//         }
-//         }
-        
-//         smk.Div() = D ;
-        
-
-//         Tensor3d tP2;
-
-        
-//         if (k==1){
-//         for (itr=0; itr<out_itr_num; itr++){
-//         smk.setDepth(max_d);
-//         Field_MGN(&smk, in_itr_num, 2) ;
-//         smk.setDepth(ceil(max_d/2));
-//         Field_MGN(&smk, in_itr_num, 2) ;
-//         smk.setDepth(2);
-//         Field_MGN(&smk, in_itr_num, 2) ;
-//         smk.setDepth(1);
-//         Field_MGN(&smk, in_itr_num, 4) ;
-//         }
-//         } else{
-//         for (itr=0; itr<out_itr_num; itr++){
-//         smk.setDepth(2);
-//         Field_MGN(&smk, in_itr_num, 2) ;
-//         smk.setDepth(1);
-//         Field_MGN(&smk, in_itr_num, 4) ;
-//     }
-//         }
-        
-
-//         tP2=smk.P();
-
-//         for ( z=0; z<k; z++){
-//         for ( y=0; y<n; y++){
-//         for ( x=0; x<m; x++){
-//         (*res_prv[z])=tP2(x,y,z);
-//         res_prv[z]++;
-//         }
-//         }
-//         }
-//     }    
-// }
