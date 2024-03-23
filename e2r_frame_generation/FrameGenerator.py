@@ -8,9 +8,9 @@ import nexusformat.nexus as nx
 import skimage
 import time
 
-class Events:
+class FrameGenerator:
     """
-    Class representing events and images for intermediate frame generation.
+    Class to deblur and generate additional frames from input video and corresponding events.
 
     Attributes:
         _events_vector (numpy.ndarray): Array to store event data.
@@ -35,17 +35,17 @@ class Events:
         _prev_start_idx (int): Index of the previous start time.
     """
 
-    def __init__(self, c_threshhold: float, exposure_time: float = None, delta_eps: float = 0) -> None:
+    def __init__(self, c_threshold: float, exposure_time: float = None, delta_eps: float = 0) -> None:
         """
         Initializes the Events object.
 
         Args:
-            c_threshhold (float): Threshold value for event accumulation.
+            c_threshhold (float): Intenstiy threshold value for event accumulation.
             exposure_time (float, optional): Exposure time for images. Defaults to None.
-            delta_eps (float, optional): Value to add to intensities during conversion. Defaults to 0.
+            delta_eps (float, optional): Delta value to add to intensities during conversion. Defaults to 0.
         """
         self._events_vector = np.empty((0, 4), dtype=np.uint32)
-        self._c_threshhold = c_threshhold
+        self._c_threshold = c_threshold
         self._delta_epsilon = delta_eps
         self._exposure_time = exposure_time
         self._initAttributes()
@@ -75,36 +75,6 @@ class Events:
 
         self._prev_start_idx = 0
 
-# class Events:
-
-#     def __init__(self, c_threshhold: float, exposure_time: float = None, delta_eps: float = 0) -> None:
-#         self._events_vector = np.empty((0, 4), dtype=np.uint32)
-#         self._c_threshhold = c_threshhold
-#         self._delta_epsilon = delta_eps
-#         self._exposure_time = exposure_time
-#         self._initAttributes()
-
-#     def _initAttributes(self) -> None:
-#         self._mean_events_diff = .0
-#         self._last_timestamp_event = 0
-#         self._last_timestamp_img = 0
-
-#         self._img_meta_data = pd.DataFrame()
-#         self._img_resolution = None
-#         self._rgb_framerate = 0
-#         self._img_folder_path = ""
-#         self._avg_frequency_imgs = .0
-
-#         self._intermediate_img = np.empty((720, 1280), dtype=np.uint8)
-#         self._frame_generated = False
-#         self._img_idx = 0
-#         self._deblurred_img = np.empty((720, 1280), dtype=np.uint8)
-#         self._timestamp_col = None
-#         self._img_data = []
-#         self._gt_img_data = []
-
-#         self._prev_start_idx = 0
-
     def getImage(self, img_idx: any) -> np.ndarray:
         """
         Retrieves an image from the image data based on the given index.
@@ -133,7 +103,7 @@ class Events:
         Load events from a file and store them in the events vector.
 
         Args:
-            path_to_file (str): The path to the file containing the events.
+            path_to_file (str): The path to the hdf5 or numpy file containing the events.
             timestamp_col (int, optional): The column index of the timestamp in the file. Defaults to 0.
             append (bool, optional): Whether to append the events to the existing events vector. Defaults to False.
 
@@ -324,12 +294,12 @@ class Events:
         if compute_integral:
             average_intensities = np.zeros(self._img_resolution, dtype=np.double)
             for i in tqdm(range(int(timestamp - self._exposure_time/2), int(timestamp + self._exposure_time/2))):
-                average_intensities += np.exp(np.multiply(self._getEventsInTimeFrame(timestamp, i), self._c_threshhold))
+                average_intensities += np.exp(np.multiply(self._getEventsInTimeFrame(timestamp, i), self._c_threshold))
             average_intensities = np.divide(average_intensities, self._exposure_time)
                 
         else:
-            integrand_0 = np.divide(np.exp(np.multiply(events_slice_0, self._c_threshhold)),self._c_threshhold)
-            integrand_1 = np.divide(np.exp(np.multiply(events_slice_1, self._c_threshhold)),self._c_threshhold)
+            integrand_0 = np.divide(np.exp(np.multiply(events_slice_0, self._c_threshold)),self._c_threshold)
+            integrand_1 = np.divide(np.exp(np.multiply(events_slice_1, self._c_threshold)),self._c_threshold)
 
             average_intensities = np.divide(np.add(integrand_0, integrand_1), 2*self._mean_events_diff)
 
@@ -424,7 +394,7 @@ class Events:
                 continue
             timestamp, base_image = self._getNearestImage(self._events_vector[i][0])
             event_stream = self._cumulateEvents(i, num_of_events=num_of_events)
-            new_frame_ln = np.add(base_image, np.multiply(event_stream, self._c_threshhold))
+            new_frame_ln = np.add(base_image, np.multiply(event_stream, self._c_threshold))
             new_frame = self.convertIntensitiesToFrame(new_frame_ln).astype(np.uint8)
             self._frame_generated = True
             self._intermediate_img = new_frame
@@ -437,7 +407,7 @@ class Events:
         Generates intermediate frames from events using existing frames as refernece. Recommended method to reconstruct high frame rate video.
 
         Args:
-            num_events (int): The number of events to generate frames for.
+            num_events (int): The number of events to cumulate to generate a frame.
             break_count (int, optional): The maximum number of frames to generate. Defaults to None.
 
         Yields:
@@ -457,7 +427,7 @@ class Events:
                 frames.append(self.convertIntensitiesToFrame(base_image).astype(np.uint8))
                 while(timestamp < next_timestamp):
                     event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
-                    base_image = np.add(base_image, np.multiply(event_stream, self._c_threshhold))
+                    base_image = np.add(base_image, np.multiply(event_stream, self._c_threshold))
                     new_frame = self.convertIntensitiesToFrame(base_image).astype(np.uint8)
                     timestamp = end_timestamp
                     frames.append(new_frame)
@@ -489,7 +459,7 @@ class Events:
             gray_img = self.convertFrameToIntensities(np.full(self._img_resolution, 128, dtype=np.uint8))
             while (timestamp < next_timestamp):
                 event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
-                base_img = np.add(base_img, np.multiply(event_stream, self._c_threshhold))
+                base_img = np.add(base_img, np.multiply(event_stream, self._c_threshold))
                 timestamp = end_timestamp
             reconstructed_img = self.convertIntensitiesToFrame(base_img).astype(np.uint8)
             reconstructed_frames.append(reconstructed_img)
@@ -500,7 +470,7 @@ class Events:
             
 
 if __name__ == "__main__":
-    events_obj = Events(0.17, delta_eps=0.0) # Events object to perform operations.
+    events_obj = FrameGenerator(0.17, delta_eps=0.0) # Events object to perform operations.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     events_obj.loadEventsFromFile("../data/1-3-circle-50-zju.h5", timestamp_col=0) # dataset contains events as well as blurred and ground truth image frames
     events_obj.loadImgMetaData("../data/1-3-circle-50-zju.h5")
