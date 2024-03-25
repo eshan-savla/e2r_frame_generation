@@ -338,8 +338,8 @@ class FrameGenerator:
         min_diff_idx = np.argmax(times[times <= timestamp])
         if (temporal_thresh is not None) and (min_diff > temporal_thresh):
             return 0, np.zeros(1)
-        if self._frame_generated and (min_diff_idx <= self._img_idx):
-            return timestamp - self._last_timestamp_event, self.convertFrameToIntensities(self._intermediate_img)
+        # if self._frame_generated and (min_diff_idx <= self._img_idx):
+        #     return timestamp - self._last_timestamp_event, self.convertFrameToIntensities(self._intermediate_img)
         if self._img_data.size == 0:
             intensity_img = cv2.imread(os.path.join(self._img_folder_path, self._img_meta_data.iloc[min_diff_idx, 1]))
         else:
@@ -433,6 +433,7 @@ class FrameGenerator:
                     frames.append(new_frame)
                 yield frames
                 pbar.update(1)
+        self._prev_start_idx = 0
 
     def evaluateLatentFrames(self, num_events:int):
         """
@@ -455,17 +456,17 @@ class FrameGenerator:
             orig_unblurred_img = self._gt_img_data[i]
             timestamp = self._img_meta_data.iloc[i-1, 0]
             orig_frames.append(orig_unblurred_img)
-            _, base_img = self._getNearestImage(timestamp)
-            gray_img = self.convertFrameToIntensities(np.full(self._img_resolution, 128, dtype=np.uint8))
+            _, base_img_eval = self._getNearestImage(timestamp)
             while (timestamp < next_timestamp):
                 event_stream, end_timestamp = self._getEventsFromTime(timestamp, num_events)
-                base_img = np.add(base_img, np.multiply(event_stream, self._c_threshold))
+                base_img_eval = np.add(base_img_eval, np.multiply(event_stream, self._c_threshold))
                 timestamp = end_timestamp
-            reconstructed_img = self.convertIntensitiesToFrame(base_img).astype(np.uint8)
+            reconstructed_img = self.convertIntensitiesToFrame(base_img_eval).astype(np.uint8)
             reconstructed_frames.append(reconstructed_img)
             ssim = skimage.metrics.structural_similarity(orig_unblurred_img, reconstructed_img, full=True)[0]
             ssim_vals.append(ssim)
-
+        
+        self._prev_start_idx = 0
         return ssim_vals, reconstructed_frames, orig_frames
             
 
@@ -555,13 +556,13 @@ if __name__ == "__main__":
     video = np.array(video)
     
 # --------------------- Saving the generated videos ----------------------------------------------
-    
-    output_fps = (len(video)/len(vid)) * (events_obj._avg_frequency_imgs / 12)
+    slow_down_factor = 10 # Determines speed of original videos. Change if timebase error for MPEG 4 Standard recieved
+    output_fps = (len(video)/len(vid)) * (events_obj._avg_frequency_imgs / slow_down_factor) # to assure length of all videos is same
     out = cv2.VideoWriter('./output_circ.mp4', fourcc, float(output_fps), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [out.write(frame) for frame in video]
-    orig_out = cv2.VideoWriter('./original_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    orig_out = cv2.VideoWriter('./original_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/slow_down_factor), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [orig_out.write(frame) for frame in vid]
-    gt_out = cv2.VideoWriter('./gt_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/12), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
+    gt_out = cv2.VideoWriter('./gt_circ.mp4', fourcc, float(events_obj._avg_frequency_imgs/slow_down_factor), (events_obj._img_resolution[1], events_obj._img_resolution[0]), isColor=False)
     [gt_out.write(frame) for frame in vid_gt]
     out.release()
     orig_out.release()
