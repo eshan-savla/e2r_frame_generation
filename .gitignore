@@ -151,6 +151,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+debug/
 develop-eggs/
 dist/
 downloads/
@@ -360,3 +361,5 @@ AMENT_IGNORE
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,c++,cmake,ros2,pycharm+all
+
+generated_imgs/
