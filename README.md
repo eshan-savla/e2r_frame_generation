@@ -4,6 +4,12 @@
 
 This repository aims to create a pipeline to pass in a color video with correspondting events and return a high frame rate, deblurred color video in return. The necessary impelentations for this procedure can easily be adapted to be used with ROS/ROS2 by writing respective wrappers.
 
+Image with motion blur:
+![Blurred image](data/docu/blurred_circle_20.png)
+
+Image after deblurring:
+![De-blurred image](data/docu/deblurred_circle_20.png)
+
 ## Installation
 1. ### Clone the repository.
 ```
@@ -42,39 +48,7 @@ mkdir -p build && cd build
 cmake <build type flags> ..
 make
 ```
-## Usage
 
-#### Data:
-Under the data section, the 3 hdf5 files are provided to test the frame generation functionality, whereas the 2 color-images are provided to test colorizer-functionality. The hdf5 files need to have the following data structure:
-
-(@ siginifies an attribute, * signifies a data-node)\
-@sensor_resolution = [262 320]\
-*events:Group\
-&emsp;ps = bool\
-&emsp;ts = float64 (time in micro-seconds)\
-&emsp;xs = int16\
-&emsp;ys = int16\
-*images:Group\
-&emsp;@num_images = 83 // optional. Is not utilised\
-&emsp;image000000000 = uint8(262x320x3)\
-&emsp;&emsp;@exposure_time = 46000.0\
-&emsp;&emsp;@size = [262 320   3] // Needs to have 3 channels\
-&emsp;&emsp;@timestamp = 21228939.0\
-&emsp;image000000001 = uint8(262x320x3)\
-&emsp;&emsp;@exposure_time = 46000.0\
-&emsp;&emsp;@size = [262 320   3]\
-&emsp;&emsp;@timestamp = 21308064.0\
-&emsp;.\
-&emsp;.\
-&emsp;.\
-&emsp;.
-
-#### Using the FrameGenerator object:
-FrameGenerator.py contains a class implementation to deblur motion-blur frames of videos using corresponding events and also generate additional frames to reconstruct a high frame rate video. This object is intended to be used as a library. 
-
-This library is currently in its prototype phase and only offers functionality to load events and video frames from files. Future work includes writing a ros wrapper around the library offer publisher-subscriber functionality.
-
-Loading data:
 ```
 events_obj = FrameGenerator(c_threshold=0.17, delta_eps=0.0)
 events_obj.loadEventsFromFile(path_to_file="../data/1-3-circle-50-zju.h5")
