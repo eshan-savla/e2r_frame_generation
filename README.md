@@ -30,7 +30,7 @@ unzip opencv_contrib.zip
 rm -rf opencv.zip
 rm -rf opencv_contrib.zip
 mkdir -p build && cd build
-cmake -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-4.x/modules -DOPENCV_ENABLE_NONFREE=On ../opencv-4.x
+cmake -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-4.x/modules -DOPENCV_ENABLE_NONFREE=ON ../opencv-4.x
 make
 sudo make install
 ```
